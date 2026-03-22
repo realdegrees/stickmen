@@ -138,8 +138,8 @@
 			const y = e.clientY - rect.top + containerEl.scrollTop;
 
 			for (const entry of handles.values()) {
-				if (entry.alive && entry.behavior === 'follow' && entry.followTarget === null) {
-					// Auto-feed mouse position to follow-behavior stickmen
+				if (entry.alive && entry.behavior === 'follow') {
+					// Continuously feed mouse position to follow-behavior stickmen
 					const stickmanEntry = engine.getEntry(entry.id);
 					if (stickmanEntry) {
 						stickmanEntry.controller.followTarget = { x, y };

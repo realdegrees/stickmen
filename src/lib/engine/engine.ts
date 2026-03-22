@@ -67,6 +67,7 @@ export class StickmenEngine {
 	private resizeObserver: ResizeObserver | null = null;
 	private mutationObserver: MutationObserver | null = null;
 	private rebuildTimeout: ReturnType<typeof setTimeout> | null = null;
+	private debugRenderable: Renderable | null = null;
 
 	debug = false;
 	defaultProximityThreshold = 60;
@@ -93,10 +94,14 @@ export class StickmenEngine {
 		this.renderer = new CanvasRenderer(canvas);
 		this.resizeCanvas();
 
-		// Debug overlay
+		// Debug overlay — add if debug was already enabled before init
 		if (this.debug) {
-			this.renderer.addRenderable(this.createDebugRenderable());
+			this.debugRenderable = this.createDebugRenderable();
+			this.renderer.addRenderable(this.debugRenderable);
 		}
+
+		// Scan grid synchronously so surfaces exist before any spawns
+		this.rebuildGrid();
 
 		this.renderer.onTick = (dt) => this.tick(dt);
 		this.renderer.start();
@@ -114,11 +119,11 @@ export class StickmenEngine {
 		});
 		this.mutationObserver.observe(container, { childList: true, subtree: true });
 
-		// Initial scan after a short delay for DOM to settle
+		// Deferred re-scan for late-rendering DOM elements
 		setTimeout(() => {
 			this.resizeCanvas();
 			this.rebuildGrid();
-		}, 100);
+		}, 200);
 
 		this._initialized = true;
 	}
@@ -401,6 +406,16 @@ export class StickmenEngine {
 		for (const entry of this.stickmen.values()) {
 			entry.controller.debug = enabled;
 		}
+
+		if (!this.renderer) return;
+
+		if (enabled && !this.debugRenderable) {
+			this.debugRenderable = this.createDebugRenderable();
+			this.renderer.addRenderable(this.debugRenderable);
+		} else if (!enabled && this.debugRenderable) {
+			this.renderer.removeRenderable(this.debugRenderable);
+			this.debugRenderable = null;
+		}
 	}
 
 	private createDebugRenderable(): Renderable {
@@ -410,10 +425,10 @@ export class StickmenEngine {
 				return { x: 0, y: 0 };
 			},
 			get active() {
-				return self.debug;
+				// Always active — lifecycle managed by setDebug add/remove
+				return true;
 			},
 			draw(ctx: CanvasRenderingContext2D) {
-				if (!self.debug) return;
 				self.grid.drawDebug(ctx);
 
 				for (const entry of self.stickmen.values()) {

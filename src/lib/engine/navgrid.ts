@@ -275,6 +275,9 @@ export class NavGrid {
 				height: domRect.height
 			};
 
+			// Skip surfaces too close to container top — stickman body would overflow
+			if (rect.top < FIGURE_HEIGHT) continue;
+
 			const forceInclude = el.matches(selector);
 
 			let hasTop: boolean;
