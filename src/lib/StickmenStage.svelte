@@ -37,7 +37,7 @@
 
 	let containerEl: HTMLElement;
 	let canvasEl: HTMLCanvasElement;
-	let engine: StickmenEngine | null = null;
+	let engine: StickmenEngine | null = $state(null);
 	let handles = new Map<string, StickmanHandle>();
 
 	// ── Reactive updates ─────────────────────────────────────────
@@ -127,8 +127,8 @@
 			}
 		}
 
-		engine.setDebug(debug);
 		engine.init(containerEl, canvasEl);
+		engine.setDebug(debug);
 
 		// Track mouse for follow behavior
 		const onMouseMove = (e: MouseEvent) => {

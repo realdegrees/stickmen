@@ -120,6 +120,27 @@ export const DEFAULT_BODY_SCALE: BodyScale = {
 	headSize: 1.0
 };
 
+/** Maximum supported body scale multiplier. NavGrid uses this to compute
+ *  safety margins so the largest possible stickman fits within the container. */
+export const MAX_BODY_SCALE = 1.2;
+
+// ── Derived Body Dimensions ──────────────────────────────────────────
+
+/** Maximum stickman height at the largest body scale */
+export const STICKMAN_MAX_HEIGHT = Math.ceil(
+	(BASE_BODY.upperLegLength +
+		BASE_BODY.lowerLegLength +
+		BASE_BODY.torsoLength +
+		BASE_BODY.neckLength +
+		BASE_BODY.headRadius) *
+		MAX_BODY_SCALE
+);
+
+/** Half the maximum stickman width (shoulder + upper arm at largest scale) */
+export const STICKMAN_HALF_WIDTH = Math.ceil(
+	(BASE_BODY.shoulderWidth + BASE_BODY.upperArmLength) * MAX_BODY_SCALE
+);
+
 // ── Stickman Config ──────────────────────────────────────────────────
 
 export interface StickmanConfig {

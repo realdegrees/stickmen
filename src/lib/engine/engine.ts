@@ -18,7 +18,7 @@ import { StickmanPhysics } from './physics.js';
 import { StickmanController } from './controller.js';
 import type { BehaviorDef } from './behaviors/types.js';
 import type { ColorInput, HSL, BodyScale, Point, Renderable } from './types.js';
-import { resolveColor } from './types.js';
+import { resolveColor, MAX_BODY_SCALE } from './types.js';
 import type { EventEmitter, StickmanEventMap } from '../events.js';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -250,10 +250,11 @@ export class StickmenEngine {
 			(fig as { speedMultiplier: number }).speedMultiplier = options.speed;
 		}
 		if (options.bodyScale) {
+			const clamp = (v: number) => Math.max(0.5, Math.min(v, MAX_BODY_SCALE));
 			const s = fig.bodyScale;
-			if (options.bodyScale.legLength !== undefined) (s as { legLength: number }).legLength = options.bodyScale.legLength;
-			if (options.bodyScale.armLength !== undefined) (s as { armLength: number }).armLength = options.bodyScale.armLength;
-			if (options.bodyScale.headSize !== undefined) (s as { headSize: number }).headSize = options.bodyScale.headSize;
+			if (options.bodyScale.legLength !== undefined) (s as { legLength: number }).legLength = clamp(options.bodyScale.legLength);
+			if (options.bodyScale.armLength !== undefined) (s as { armLength: number }).armLength = clamp(options.bodyScale.armLength);
+			if (options.bodyScale.headSize !== undefined) (s as { headSize: number }).headSize = clamp(options.bodyScale.headSize);
 		}
 
 		const actions = new StickmanActions(fig);

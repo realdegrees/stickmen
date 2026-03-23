@@ -6,7 +6,7 @@
  */
 
 import type { BodyScale, HSL, Joint, JointName, Pose, Renderable, StickmanConfig } from './types.js';
-import { BASE_BODY, BONES, JOINT_NAMES, colorToHSL, colorToHSLA } from './types.js';
+import { BASE_BODY, BONES, JOINT_NAMES, MAX_BODY_SCALE, colorToHSL, colorToHSLA } from './types.js';
 import type { AnimationRegistry } from './animations/registry.js';
 import type { AnimationResolver } from './animations/types.js';
 import type { HatDef } from './hats.js';
@@ -228,6 +228,11 @@ export class Stickman implements Renderable {
 
 // ── Factory ──────────────────────────────────────────────────────────
 
+/** Clamp a body scale value to the supported range */
+function clampScale(v: number): number {
+	return Math.max(0.5, Math.min(v, MAX_BODY_SCALE));
+}
+
 /** Create a stickman with randomized personality */
 export function createStickman(
 	x: number,
@@ -241,9 +246,9 @@ export function createStickman(
 		speedMultiplier: 0.7 + Math.random() * 0.6,
 		hatId: hatDef?.id ?? null,
 		bodyScale: {
-			legLength: 0.7 + Math.random() * 0.25,
-			armLength: 0.7 + Math.random() * 0.25,
-			headSize: 0.7 + Math.random() * 0.25
+			legLength: clampScale(0.7 + Math.random() * 0.25),
+			armLength: clampScale(0.7 + Math.random() * 0.25),
+			headSize: clampScale(0.7 + Math.random() * 0.25)
 		}
 	};
 

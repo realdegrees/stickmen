@@ -6,21 +6,22 @@
  */
 
 import type { NavSurface, NavNode, NavEdge, Surface, SurfaceQuery } from './types.js';
+import { BASE_BODY, STICKMAN_MAX_HEIGHT, STICKMAN_HALF_WIDTH } from './types.js';
 
-// ── Constants ────────────────────────────────────────────────────────
+// ── Constants (derived from body dimensions where possible) ──────────
 
 const ROPE_LAYER_PENALTY = 150;
 const MIN_ELEMENT_WIDTH = 15;
 const NODE_SPACING = 40;
 const MIN_BORDER_WIDTH = 0.5;
-const FIGURE_HEIGHT = 24;
-const FIGURE_HALF_WIDTH = 12;
-/** Minimum distance from container top for a walkable surface (body + margin) */
-const TOP_MARGIN = Math.ceil(FIGURE_HEIGHT * 1.2);
+
+/** Minimum distance from container top for a walkable surface.
+ *  Full body height + head clearance so the stickman doesn't clip. */
+const TOP_MARGIN = STICKMAN_MAX_HEIGHT + BASE_BODY.headRadius;
 const JUMP_MAX_GAP = 100;
-const JUMP_MAX_DY = FIGURE_HEIGHT * 2;
+const JUMP_MAX_DY = STICKMAN_MAX_HEIGHT * 2;
 const ROPE_HORIZONTAL_MARGIN = NODE_SPACING * 0.8;
-const TALL_ELEMENT_THRESHOLD = FIGURE_HEIGHT * 3;
+const TALL_ELEMENT_THRESHOLD = STICKMAN_MAX_HEIGHT * 3;
 const SURFACE_MERGE_GAP = 15;
 const SURFACE_MERGE_Y_TOLERANCE = 2;
 
@@ -280,12 +281,9 @@ export class NavGrid {
 				height: domRect.height
 			};
 
-			// Skip surfaces too close to container top — stickman body would overflow
-			if (rect.top < TOP_MARGIN) continue;
-
 			// Inset surface edges from container sides so stickmen don't overflow
-			rect.left = Math.max(rect.left, FIGURE_HALF_WIDTH);
-			rect.right = Math.min(rect.right, this.containerSize.width - FIGURE_HALF_WIDTH);
+			rect.left = Math.max(rect.left, STICKMAN_HALF_WIDTH);
+			rect.right = Math.min(rect.right, this.containerSize.width - STICKMAN_HALF_WIDTH);
 			if (rect.right - rect.left < MIN_ELEMENT_WIDTH) continue;
 			rect.width = rect.right - rect.left;
 
@@ -304,7 +302,10 @@ export class NavGrid {
 				if (!hasTop && !hasBottom) continue;
 			}
 
-			if (hasTop) {
+			// Per-surface top margin check — skip surfaces too close to
+			// the container top where the stickman body would overflow,
+			// but still allow the bottom edge of the same element
+			if (hasTop && rect.top >= TOP_MARGIN) {
 				this.surfaces.push({
 					id: `s${surfaceId++}`,
 					edge: 'top',
@@ -317,7 +318,7 @@ export class NavGrid {
 			}
 
 			if (hasBottom) {
-				if (!hasTop || rect.height >= TALL_ELEMENT_THRESHOLD) {
+				if ((!hasTop || rect.height >= TALL_ELEMENT_THRESHOLD) && rect.bottom >= TOP_MARGIN) {
 					this.surfaces.push({
 						id: `s${surfaceId++}`,
 						edge: 'bottom',
