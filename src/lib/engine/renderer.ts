@@ -16,6 +16,9 @@ export class CanvasRenderer {
 	/** External tick hook — called every frame before drawing */
 	onTick: ((deltaMs: number) => void) | null = null;
 
+	/** Post-process hook — called every frame after all renderables have drawn */
+	onPostProcess: ((ctx: CanvasRenderingContext2D, delta: number) => void) | null = null;
+
 	constructor(canvas: HTMLCanvasElement) {
 		const ctx = canvas.getContext('2d');
 		if (!ctx) throw new Error('Could not get 2D canvas context');
@@ -64,6 +67,7 @@ export class CanvasRenderer {
 		this.stop();
 		this.clearRenderables();
 		this.onTick = null;
+		this.onPostProcess = null;
 		this._destroyed = true;
 	}
 
@@ -85,6 +89,11 @@ export class CanvasRenderer {
 			if (r.active) {
 				r.draw(this.ctx);
 			}
+		}
+
+		// Post-process hook
+		if (this.onPostProcess) {
+			this.onPostProcess(this.ctx, delta);
 		}
 
 		this.animFrameId = requestAnimationFrame(this.loop);

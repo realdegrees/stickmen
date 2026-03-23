@@ -3,11 +3,18 @@
 	import { StickmenEngine, type SpawnOptions } from './engine/engine.js';
 	import type { AnimationResolver } from './engine/animations/types.js';
 	import type { HatDef } from './engine/hats.js';
-	import type { BehaviorDef } from './engine/behaviors/types.js';
-	import type { Point } from './engine/types.js';
+	import type { PostProcessFn } from './engine/types.js';
 	import { StickmanHandle } from './handle.js';
 	import { EventEmitter, type StickmanEventMap } from './events.js';
+	import { WanderBehavior } from './engine/behaviors/defaults.js';
+	import type { BehaviorInput, StickmanBehavior } from './engine/behaviors/types.js';
 	import type { Snippet } from 'svelte';
+
+	function resolveBehavior(input: BehaviorInput | undefined): StickmanBehavior {
+		if (!input) return new WanderBehavior();
+		if (typeof input === 'function') return new (input as new () => StickmanBehavior)();
+		return input;
+	}
 
 	interface Props {
 		selector?: string;
@@ -16,7 +23,7 @@
 		paused?: boolean;
 		animations?: AnimationResolver[];
 		hats?: HatDef[];
-		behaviors?: BehaviorDef[];
+		postProcess?: PostProcessFn;
 		proximityThreshold?: number;
 		children?: Snippet;
 		class?: string;
@@ -29,7 +36,7 @@
 		paused = false,
 		animations = undefined,
 		hats = undefined,
-		behaviors = undefined,
+		postProcess = undefined,
 		proximityThreshold = 60,
 		children,
 		class: className = ''
@@ -50,6 +57,10 @@
 		if (engine) engine.paused = paused;
 	});
 
+	$effect(() => {
+		if (engine) engine.setPostProcess(postProcess ?? null);
+	});
+
 	// ── Public API (via bind:this) ───────────────────────────────
 
 	export function spawn(options: SpawnOptions = {}): StickmanHandle {
@@ -59,7 +70,16 @@
 		const entry = engine.spawn(options, emitter);
 		const handle = new StickmanHandle(entry.id, engine, emitter);
 		handles.set(entry.id, handle);
+
+		// Attach behavior now that handle exists (needed for BehaviorHandle.container).
+		// Accepts a class constructor or instance; defaults to WanderBehavior.
+		entry.controller.attachBehavior(resolveBehavior(options.behavior), handle);
+
 		return handle;
+	}
+
+	export function getContainer(): HTMLElement {
+		return containerEl;
 	}
 
 	export function clear(): void {
@@ -92,10 +112,6 @@
 		engine?.registerHat(hat);
 	}
 
-	export function registerBehavior(behavior: BehaviorDef): void {
-		engine?.registerBehavior(behavior);
-	}
-
 	// ── Lifecycle ────────────────────────────────────────────────
 
 	onMount(() => {
@@ -120,38 +136,10 @@
 			}
 		}
 
-		// Register custom behaviors
-		if (behaviors) {
-			for (const b of behaviors) {
-				engine.registerBehavior(b);
-			}
-		}
-
 		engine.init(containerEl, canvasEl);
 		engine.setDebug(debug);
 
-		// Track mouse for follow behavior
-		const onMouseMove = (e: MouseEvent) => {
-			if (!engine || !containerEl) return;
-			const rect = containerEl.getBoundingClientRect();
-			const x = e.clientX - rect.left + containerEl.scrollLeft;
-			const y = e.clientY - rect.top + containerEl.scrollTop;
-
-			for (const entry of handles.values()) {
-				if (entry.alive && entry.behavior === 'follow') {
-					// Continuously feed mouse position to follow-behavior stickmen
-					const stickmanEntry = engine.getEntry(entry.id);
-					if (stickmanEntry) {
-						stickmanEntry.controller.followTarget = { x, y };
-					}
-				}
-			}
-		};
-
-		containerEl.addEventListener('mousemove', onMouseMove);
-
 		return () => {
-			containerEl.removeEventListener('mousemove', onMouseMove);
 			clear();
 			engine?.destroy();
 			engine = null;

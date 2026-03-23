@@ -132,6 +132,31 @@ export class Rope implements Renderable {
 		return { index: bestIdx, point: this.points[bestIdx], dist: bestDist };
 	}
 
+	getPointAt(index: number): { x: number; y: number } {
+		const p = this.points[Math.max(0, Math.min(index, this.points.length - 1))];
+		return { x: p.x, y: p.y };
+	}
+
+	getSegmentAngle(index: number): number {
+		const clamped = Math.max(0, Math.min(index, this.points.length - 1));
+		let a: RopePoint, b: RopePoint;
+		if (clamped >= this.points.length - 1) {
+			a = this.points[clamped - 1];
+			b = this.points[clamped];
+		} else {
+			a = this.points[clamped];
+			b = this.points[clamped + 1];
+		}
+		// Angle from vertical: 0 = straight down, positive = leaning right
+		return Math.atan2(b.x - a.x, b.y - a.y);
+	}
+
+	getEndVelocity(): { vx: number; vy: number } {
+		const last = this.points[this.points.length - 1];
+		if (!last) return { vx: 0, vy: 0 };
+		return { vx: last.x - last.prevX, vy: last.y - last.prevY };
+	}
+
 	applyForce(pointIndex: number, fx: number, fy: number): void {
 		const p = this.points[pointIndex];
 		if (p && !p.pinned) {

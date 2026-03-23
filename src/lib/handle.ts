@@ -1,12 +1,15 @@
 /**
  * StickmanHandle — Public API for a spawned stickman.
  * Thin wrapper over engine internals.
+ *
+ * Satisfies BehaviorHandle structurally (no explicit import needed).
  */
 
 import type { StickmenEngine, StickmanEntry } from './engine/engine.js';
 import type { ColorInput, Point } from './engine/types.js';
 import { resolveColor } from './engine/types.js';
 import { EventEmitter, type StickmanEventMap } from './events.js';
+import type { StickmanBehavior } from './engine/behaviors/types.js';
 
 export class StickmanHandle {
 	readonly id: string;
@@ -20,7 +23,15 @@ export class StickmanHandle {
 		this._emitter = emitter;
 	}
 
-	// ── Position (read-only) ─────────────────────────────────────────
+	// ── Container ────────────────────────────────────────────────────
+
+	get container(): HTMLElement {
+		const c = this.engine.container;
+		if (!c) throw new Error('Stage container not available');
+		return c;
+	}
+
+	// ── Position ─────────────────────────────────────────────────────
 
 	get position(): Readonly<Point> {
 		const entry = this.getEntry();
@@ -38,49 +49,37 @@ export class StickmanHandle {
 
 	// ── Behavior ─────────────────────────────────────────────────────
 
-	get behavior(): string {
-		return this.getEntry()?.controller.behaviorId ?? 'idle';
+	/** Returns the currently attached behavior instance, or null. */
+	get behavior(): StickmanBehavior | null {
+		return this.getEntry()?.controller.behavior ?? null;
 	}
 
-	set behavior(id: string) {
-		this.getEntry()?.controller.setBehavior(id);
-	}
-
-	// ── Target (for 'target' behavior) ───────────────────────────────
-
-	get target(): Point | null {
-		return this.getEntry()?.controller.target ?? null;
-	}
-
-	set target(point: Point | null) {
+	/** Replace the active behavior. The previous behavior's onDetach is called. */
+	setBehavior(behavior: StickmanBehavior | null): void {
 		const entry = this.getEntry();
-		if (entry) entry.controller.target = point;
+		if (entry) entry.controller.attachBehavior(behavior, this);
 	}
 
-	// ── Follow target ────────────────────────────────────────────────
+	// ── Navigation ───────────────────────────────────────────────────
 
-	get followTarget(): Point | null {
-		return this.getEntry()?.controller.followTarget ?? null;
+	get hasPath(): boolean {
+		return this.getEntry()?.controller.hasPath ?? false;
 	}
 
-	set followTarget(point: Point | null) {
-		const entry = this.getEntry();
-		if (entry) entry.controller.followTarget = point;
+	pathTo(x: number, y: number): boolean {
+		return this.getEntry()?.controller.pathTo(x, y) ?? false;
 	}
 
-	// ── Flee overlay ─────────────────────────────────────────────────
-
-	get fleeFrom(): Point | null {
-		return this.getEntry()?.controller.fleeFrom ?? null;
+	pathRandom(minDist?: number, maxDist?: number): boolean {
+		return this.getEntry()?.controller.pathRandom(minDist, maxDist) ?? false;
 	}
 
-	set fleeFrom(point: Point | null) {
-		const entry = this.getEntry();
-		if (entry) entry.controller.fleeFrom = point;
+	pathAway(from: Point): boolean {
+		return this.getEntry()?.controller.pathAway(from) ?? false;
 	}
 
-	get fleeing(): boolean {
-		return this.getEntry()?.controller.fleeing ?? false;
+	clearPath(): void {
+		this.getEntry()?.controller.clearPath();
 	}
 
 	// ── Visual ───────────────────────────────────────────────────────

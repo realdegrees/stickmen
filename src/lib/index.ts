@@ -12,6 +12,18 @@ export type { StickmanEventMap, StickmanEventName } from './events.js';
 export { StickmenEngine } from './engine/engine.js';
 export type { SpawnOptions } from './engine/engine.js';
 
+// ── Behavior System ───────────────────────────────────────────────────
+export type { StickmanBehavior, BehaviorHandle, BehaviorInput } from './engine/behaviors/types.js';
+export { WanderBehavior, FollowBehavior, IdleBehavior } from './engine/behaviors/defaults.js';
+
+import { WanderBehavior, FollowBehavior, IdleBehavior } from './engine/behaviors/defaults.js';
+/** Convenience namespace — pass these directly to spawn() without `new`. */
+export const Behaviours = {
+	Wander: WanderBehavior,
+	Follow: FollowBehavior,
+	Idle: IdleBehavior
+} as const;
+
 // ── Types ────────────────────────────────────────────────────────────
 export type {
 	ColorInput,
@@ -19,7 +31,10 @@ export type {
 	HSL,
 	Point,
 	BodyScale,
-	BuiltinBehavior
+	Pose,
+	StickmanSnapshot,
+	PostProcessFrameData,
+	PostProcessFn
 } from './engine/types.js';
 export { COLOR_PRESETS, resolveColor, colorToHSL } from './engine/types.js';
 
@@ -32,5 +47,3 @@ export { AnimationRegistry } from './engine/animations/registry.js';
 export type { HatDef } from './engine/hats.js';
 export { HatRegistry } from './engine/hats.js';
 
-// ── Behavior System ──────────────────────────────────────────────────
-export type { BehaviorDef, BehaviorContext } from './engine/behaviors/types.js';

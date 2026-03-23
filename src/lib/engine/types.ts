@@ -191,7 +191,7 @@ export interface NavEdge {
 	from: string;
 	to: string;
 	cost: number;
-	type: 'walk' | 'jump' | 'rope';
+	type: 'walk' | 'jump' | 'rope' | 'rope-swing';
 }
 
 export interface NavPath {
@@ -200,9 +200,33 @@ export interface NavPath {
 	totalCost: number;
 }
 
-// ── Behavior Types ───────────────────────────────────────────────────
+// ── Post-Processing ──────────────────────────────────────────────────
 
-export type BuiltinBehavior = 'wander' | 'follow' | 'target' | 'idle';
+/** Read-only snapshot of a stickman's render state for post-processing. */
+export interface StickmanSnapshot {
+	readonly id: string;
+	readonly x: number;
+	readonly y: number;
+	readonly pose: Readonly<Pose>;
+	readonly animationId: string;
+	readonly direction: 1 | -1;
+	readonly color: Readonly<HSL>;
+	readonly rotation: number;
+	readonly active: boolean;
+}
+
+/** Frame data passed to the post-process hook. */
+export interface PostProcessFrameData {
+	readonly stickmen: readonly StickmanSnapshot[];
+	readonly delta: number;
+	readonly canvas: HTMLCanvasElement;
+}
+
+/** Post-process callback signature. Called after all renderables have drawn. */
+export type PostProcessFn = (
+	ctx: CanvasRenderingContext2D,
+	frame: PostProcessFrameData
+) => void;
 
 // ── Geometry Helpers ─────────────────────────────────────────────────
 

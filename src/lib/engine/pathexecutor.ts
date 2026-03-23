@@ -138,6 +138,9 @@ export class PathExecutor {
 				}
 				break;
 			}
+			case 'rope-swing':
+				this.actions.startRopeSwing(targetNode.x, targetNode.y);
+				break;
 		}
 	}
 

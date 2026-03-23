@@ -27,6 +27,9 @@ export class Stickman implements Renderable {
 	direction: 1 | -1 = 1;
 	active = true;
 
+	/** Body rotation in radians (0 = upright). Set by rope-swing action. */
+	rotation = 0;
+
 	// Animation params — set by actions/controllers, read by animation resolvers
 	animParams: Record<string, number> = {};
 
@@ -170,6 +173,16 @@ export class Stickman implements Renderable {
 		const p = this.poseOverride ?? this.currentPose;
 
 		ctx.save();
+
+		// Apply body rotation around the grip point (average hand position)
+		if (this.rotation !== 0) {
+			const pivotX = (p.handL.x + p.handR.x) / 2;
+			const pivotY = Math.min(p.handL.y, p.handR.y);
+			ctx.translate(pivotX, pivotY);
+			ctx.rotate(this.rotation);
+			ctx.translate(-pivotX, -pivotY);
+		}
+
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
 		ctx.lineWidth = BASE_BODY.strokeWidth;

@@ -294,7 +294,17 @@ export class NavGrid {
 			let hasTop: boolean;
 			let hasBottom: boolean;
 
-			if (!this.config.autoDetectBorders || forceInclude) {
+			// Allow per-element edge control via attribute value:
+			//   data-walkable        → default (top always, bottom if border)
+			//   data-walkable="top"   → top edge only
+			//   data-walkable="bottom"→ bottom edge only
+			const walkableValue = (el as HTMLElement).dataset?.walkable;
+			const explicitEdge = walkableValue === 'top' || walkableValue === 'bottom';
+
+			if (explicitEdge) {
+				hasTop = walkableValue === 'top';
+				hasBottom = walkableValue === 'bottom';
+			} else if (!this.config.autoDetectBorders || forceInclude) {
 				hasTop = true;
 				hasBottom = hasVisibleBottomBorder(el);
 			} else {
@@ -320,7 +330,7 @@ export class NavGrid {
 			}
 
 			if (hasBottom) {
-				if ((!hasTop || rect.height >= TALL_ELEMENT_THRESHOLD) && rect.bottom >= TOP_MARGIN) {
+				if ((explicitEdge || !hasTop || rect.height >= TALL_ELEMENT_THRESHOLD) && rect.bottom >= TOP_MARGIN) {
 					this.surfaces.push({
 						id: `s${surfaceId++}`,
 						edge: 'bottom',
@@ -397,6 +407,7 @@ export class NavGrid {
 		this.connectWalkEdges();
 		this.connectJumpEdges();
 		this.connectRopeEdges();
+		this.connectRopeSwingEdges();
 	}
 
 	private connectWalkEdges(): void {
@@ -523,6 +534,12 @@ export class NavGrid {
 	}
 
 	private connectRopeEdges(): void {
+		// Build surface lookup for horizontal overlap checks
+		const surfaceMap = new Map<string, NavSurface>();
+		for (const s of this.surfaces) {
+			surfaceMap.set(s.id, s);
+		}
+
 		for (let i = 0; i < this.nodes.length; i++) {
 			for (let j = i + 1; j < this.nodes.length; j++) {
 				const a = this.nodes[i];
@@ -535,6 +552,16 @@ export class NavGrid {
 
 				const dy = Math.abs(a.y - b.y);
 				if (dy <= JUMP_MAX_DY) continue;
+
+				// Surfaces must overlap horizontally (not just edge-adjacent).
+				// This prevents diagonal rope edges between cards in a horizontal
+				// grid that happen to have close edges but different x ranges.
+				const surfA = surfaceMap.get(a.surfaceId);
+				const surfB = surfaceMap.get(b.surfaceId);
+				if (surfA && surfB) {
+					const overlap = Math.min(surfA.x2, surfB.x2) - Math.max(surfA.x1, surfB.x1);
+					if (overlap < MIN_ELEMENT_WIDTH) continue;
+				}
 
 				const minY = Math.min(a.y, b.y);
 				const maxY = Math.max(a.y, b.y);
@@ -565,6 +592,95 @@ export class NavGrid {
 				const cost = dist + skippedLayers * ROPE_LAYER_PENALTY;
 				this.addEdge(a.id, b.id, cost, 'rope');
 			}
+		}
+	}
+
+	private connectRopeSwingEdges(): void {
+		// Index nodes by surface, sorted by x
+		const nodesBySurface = new Map<string, NavNode[]>();
+		for (const node of this.nodes) {
+			let list = nodesBySurface.get(node.surfaceId);
+			if (!list) {
+				list = [];
+				nodesBySurface.set(node.surfaceId, list);
+			}
+			list.push(node);
+		}
+		for (const list of nodesBySurface.values()) {
+			list.sort((a, b) => a.x - b.x);
+		}
+
+		// Sort surfaces by left edge
+		const sorted = [...this.surfaces].sort((a, b) => a.x1 - b.x1);
+
+		const connected = new Set<string>();
+
+		for (let i = 0; i < sorted.length; i++) {
+			const sA = sorted[i];
+			const nodesA = nodesBySurface.get(sA.id);
+			if (!nodesA || nodesA.length === 0) continue;
+
+			// Scan rightward: find the nearest platform group across a large gap,
+			// then pick the surface within that group with the closest Y to sA.
+			let nearestGroupX = Infinity;
+			let bestTarget: NavSurface | null = null;
+			let bestYDiff = Infinity;
+
+			for (let j = i + 1; j < sorted.length; j++) {
+				const sB = sorted[j];
+				if (!nodesBySurface.get(sB.id)?.length) continue;
+
+				const gap = sB.x1 - sA.x2;
+				if (gap <= JUMP_MAX_GAP) continue;
+
+				// Record the x1 of the nearest group across the gap
+				if (nearestGroupX === Infinity) nearestGroupX = sB.x1;
+
+				// Stop scanning past the nearest platform group
+				if (sB.x1 > nearestGroupX + JUMP_MAX_GAP) break;
+
+				// Check that no reachable surface overlaps with the gap region
+				let bridged = false;
+				for (const sM of this.surfaces) {
+					if (sM.id === sA.id || sM.id === sB.id) continue;
+					// Surface must overlap horizontally with the gap [sA.x2, sB.x1]
+					if (sM.x2 <= sA.x2 || sM.x1 >= sB.x1) continue;
+					// Surface must be reachable from either endpoint
+					if (
+						Math.abs(sM.y1 - sA.y1) < JUMP_MAX_DY * 3 ||
+						Math.abs(sM.y1 - sB.y1) < JUMP_MAX_DY * 3
+					) {
+						bridged = true;
+						break;
+					}
+				}
+				if (bridged) continue;
+
+				// Pick the surface with closest Y within this group
+				const yDiff = Math.abs(sB.y1 - sA.y1);
+				if (yDiff < bestYDiff) {
+					bestYDiff = yDiff;
+					bestTarget = sB;
+				}
+			}
+
+			if (!bestTarget) continue;
+
+			const nodesB = nodesBySurface.get(bestTarget.id)!;
+			const srcNode = nodesA[nodesA.length - 1];
+			const dstNode = nodesB[0];
+
+			const pairKey =
+				srcNode.id < dstNode.id
+					? `${srcNode.id}:${dstNode.id}`
+					: `${dstNode.id}:${srcNode.id}`;
+			if (connected.has(pairKey)) continue;
+			connected.add(pairKey);
+
+			const dx = Math.abs(srcNode.x - dstNode.x);
+			const dy = Math.abs(srcNode.y - dstNode.y);
+			const dist = Math.sqrt(dx * dx + dy * dy);
+			this.addEdge(srcNode.id, dstNode.id, dist * 2.0, 'rope-swing');
 		}
 	}
 
@@ -641,7 +757,9 @@ export class NavGrid {
 			ctx.strokeStyle =
 				e.type === 'jump'
 					? 'rgba(255, 200, 0, 0.25)'
-					: 'rgba(255, 100, 200, 0.25)';
+					: e.type === 'rope-swing'
+						? 'rgba(100, 200, 255, 0.25)'
+						: 'rgba(255, 100, 200, 0.25)';
 			ctx.lineWidth = 0.5;
 			ctx.setLineDash([2, 4]);
 			ctx.beginPath();

@@ -16,16 +16,16 @@ import type { HatDef } from './hats.js';
 import { StickmanActions } from './actions.js';
 import { StickmanPhysics } from './physics.js';
 import { StickmanController } from './controller.js';
-import type { BehaviorDef } from './behaviors/types.js';
-import type { ColorInput, HSL, BodyScale, Point, Renderable } from './types.js';
+import type { ColorInput, HSL, BodyScale, Point, Renderable, PostProcessFn, StickmanSnapshot } from './types.js';
 import { resolveColor, MAX_BODY_SCALE } from './types.js';
 import type { EventEmitter, StickmanEventMap } from '../events.js';
+import type { StickmanBehavior, BehaviorInput } from './behaviors/types.js';
 
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface SpawnOptions {
 	id?: string;
-	behavior?: string;
+	behavior?: BehaviorInput;
 	color?: ColorInput;
 	hat?: string | false;
 	speed?: number;
@@ -52,7 +52,7 @@ export class StickmenEngine {
 	private renderer: CanvasRenderer | null = null;
 	private grid: NavGrid;
 	private canvas: HTMLCanvasElement | null = null;
-	private container: HTMLElement | null = null;
+	private _container: HTMLElement | null = null;
 
 	readonly animationRegistry: AnimationRegistry;
 	readonly hatRegistry: HatRegistry;
@@ -72,6 +72,8 @@ export class StickmenEngine {
 	debug = false;
 	defaultProximityThreshold = 60;
 
+	private _postProcessFn: PostProcessFn | null = null;
+
 	// Grid config
 	private gridConfig: NavGridConfig;
 
@@ -87,7 +89,7 @@ export class StickmenEngine {
 	init(container: HTMLElement, canvas: HTMLCanvasElement): void {
 		if (this._initialized) return;
 
-		this.container = container;
+		this._container = container;
 		this.canvas = canvas;
 		this.grid.setContainer(container);
 
@@ -104,6 +106,14 @@ export class StickmenEngine {
 		this.rebuildGrid();
 
 		this.renderer.onTick = (dt) => this.tick(dt);
+		this.renderer.onPostProcess = (ctx, delta) => {
+			if (!this._postProcessFn || !this.canvas) return;
+			this._postProcessFn(ctx, {
+				stickmen: this.collectSnapshots(),
+				delta,
+				canvas: this.canvas
+			});
+		};
 		this.renderer.start();
 
 		// Auto-rebuild on container resize
@@ -145,6 +155,10 @@ export class StickmenEngine {
 		return this._initialized;
 	}
 
+	get container(): HTMLElement | null {
+		return this._container;
+	}
+
 	set paused(value: boolean) {
 		this._paused = value;
 		if (value) {
@@ -163,11 +177,22 @@ export class StickmenEngine {
 	rebuildGrid(): void {
 		this.grid.scan();
 
-		// Update physics surface queries for all stickmen
+		// Update physics surface queries and bounds for all stickmen
 		const query = this.grid.getSurfaceQuery();
+		const bounds = this.getContainerBounds();
 		for (const entry of this.stickmen.values()) {
 			entry.physics.findSurface = query;
+			entry.physics.surfaces = this.grid.surfaces;
+			if (bounds) entry.physics.containerBounds = bounds;
 		}
+	}
+
+	private getContainerBounds(): { width: number; height: number } | null {
+		if (!this._container) return null;
+		return {
+			width: this._container.scrollWidth,
+			height: this._container.scrollHeight
+		};
 	}
 
 	private scheduleRebuild(): void {
@@ -188,11 +213,29 @@ export class StickmenEngine {
 		this.hatRegistry.register(hat);
 	}
 
-	registerBehavior(behavior: BehaviorDef): void {
-		// Register on all existing controllers
-		for (const entry of this.stickmen.values()) {
-			entry.controller.registerBehavior(behavior);
+	// ── Post-Processing ─────────────────────────────────────────────
+
+	setPostProcess(fn: PostProcessFn | null): void {
+		this._postProcessFn = fn;
+	}
+
+	private collectSnapshots(): StickmanSnapshot[] {
+		const snapshots: StickmanSnapshot[] = [];
+		for (const [id, entry] of this.stickmen) {
+			const fig = entry.fig;
+			snapshots.push({
+				id,
+				x: fig.x,
+				y: fig.y,
+				pose: fig.getCurrentPose(),
+				animationId: fig.animationId,
+				direction: fig.direction,
+				color: fig.color,
+				rotation: fig.rotation,
+				active: fig.active
+			});
 		}
+		return snapshots;
 	}
 
 	// ── Spawn / Remove ───────────────────────────────────────────────
@@ -230,9 +273,9 @@ export class StickmenEngine {
 		if (options.position) {
 			spawnX = options.position.x;
 			spawnY = options.position.y;
-		} else if (options.nearElement && this.container) {
+		} else if (options.nearElement && this._container) {
 			const elRect = options.nearElement.getBoundingClientRect();
-			const cRect = this.container.getBoundingClientRect();
+			const cRect = this._container.getBoundingClientRect();
 			spawnX = elRect.left + elRect.width / 2 - cRect.left;
 			spawnY = elRect.top - cRect.top;
 		} else {
@@ -260,12 +303,10 @@ export class StickmenEngine {
 		const actions = new StickmanActions(fig);
 		const surfaceQuery = this.grid.getSurfaceQuery();
 		const physics = new StickmanPhysics(fig, surfaceQuery);
-		const controller = new StickmanController(
-			actions,
-			physics,
-			this.grid,
-			options.behavior ?? 'wander'
-		);
+		physics.surfaces = this.grid.surfaces;
+		const bounds = this.getContainerBounds();
+		if (bounds) physics.containerBounds = bounds;
+		const controller = new StickmanController(actions, physics, this.grid);
 
 		if (this.debug) controller.debug = true;
 
@@ -292,6 +333,7 @@ export class StickmenEngine {
 		const entry = this.stickmen.get(id);
 		if (!entry) return;
 
+		entry.controller.detachCurrentBehavior();
 		entry.actions.cancel();
 		entry.fig.active = false;
 		this.renderer?.removeRenderable(entry.fig);
@@ -381,10 +423,10 @@ export class StickmenEngine {
 	// ── Canvas Sizing ────────────────────────────────────────────────
 
 	private resizeCanvas(): void {
-		if (!this.container || !this.renderer) return;
+		if (!this._container || !this.renderer) return;
 
-		const width = this.container.scrollWidth;
-		const height = this.container.scrollHeight;
+		const width = this._container.scrollWidth;
+		const height = this._container.scrollHeight;
 		this.renderer.resize(width, height);
 	}
 

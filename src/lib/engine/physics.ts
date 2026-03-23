@@ -5,11 +5,16 @@
  * - Action-controlled: physics is passive, only checks grounded state
  * - Physics-controlled: applies gravity, landing detection, ragdoll on hard impact
  *
+ * Safety nets:
+ * - Out-of-bounds detection: resets stickman to nearest surface
+ * - Motionless ragdoll timeout: force-recovers settled ragdolls whose
+ *   feet didn't land on a recognized surface
+ *
  * Surface knowledge is injected via SurfaceQuery function.
  */
 
 import type { Stickman } from './stickman.js';
-import type { JointName, Pose, SurfaceQuery } from './types.js';
+import type { JointName, Pose, SurfaceQuery, NavSurface } from './types.js';
 import { JOINT_NAMES, BONES } from './types.js';
 
 const GRAVITY = 0.0012;
@@ -21,12 +26,29 @@ const RAGDOLL_IMPACT_THRESHOLD = 0.4;
 const RAGDOLL_RECOVERY_DELAY = 300;
 const SURFACE_SEARCH_RADIUS = 200;
 
+/** Fraction of vertical velocity reflected on surface collision (bounce) */
+const RAGDOLL_RESTITUTION = 0.3;
+
+/** Squared velocity threshold below which the ragdoll is considered motionless */
+const MOTIONLESS_THRESHOLD_SQ = 0.5;
+
+/** How long (ms) a ragdoll must be motionless before force-recovering */
+const RAGDOLL_MOTIONLESS_TIMEOUT = 1500;
+
+/** Margin beyond container bounds before triggering a reset */
+const OOB_MARGIN = 50;
+
 interface RagdollJoint {
 	name: JointName;
 	x: number;
 	y: number;
 	prevX: number;
 	prevY: number;
+}
+
+export interface ContainerBounds {
+	width: number;
+	height: number;
 }
 
 export class StickmanPhysics {
@@ -40,9 +62,16 @@ export class StickmanPhysics {
 	ragdolling = false;
 	surfaceLost = false;
 
+	/** Container bounds for out-of-bounds detection. Set by the engine. */
+	containerBounds: ContainerBounds | null = null;
+
+	/** All surfaces for nearest-surface lookups during reset. Set by the engine. */
+	surfaces: NavSurface[] = [];
+
 	private ragdollJoints: RagdollJoint[] = [];
 	private ragdollBoneLengths = new Map<string, number>();
 	private ragdollGroundTimer = 0;
+	private ragdollMotionlessTimer = 0;
 
 	onLanded: (() => void) | null = null;
 
@@ -64,6 +93,7 @@ export class StickmanPhysics {
 		this.ragdolling = true;
 		this.grounded = false;
 		this.ragdollGroundTimer = 0;
+		this.ragdollMotionlessTimer = 0;
 
 		const pose = this.fig.getCurrentPose();
 		this.ragdollJoints = JOINT_NAMES.map((name) => ({
@@ -109,6 +139,10 @@ export class StickmanPhysics {
 
 		if (this.ragdolling) {
 			this.updateRagdoll(dt);
+			// Check bounds after ragdoll update
+			if (this.isOutOfBounds()) {
+				this.resetToNearestSurface();
+			}
 			return;
 		}
 
@@ -178,12 +212,20 @@ export class StickmanPhysics {
 		} else if (!this.ragdolling) {
 			this.fig.tick(dt);
 		}
+
+		// Out-of-bounds check (non-ragdoll falling)
+		if (this.isOutOfBounds()) {
+			this.resetToNearestSurface();
+		}
 	}
+
+	// ── Ragdoll Physics ──────────────────────────────────────────────
 
 	private updateRagdoll(dt: number): void {
 		const joints = this.ragdollJoints;
 		const normalDt = Math.min(dt / 16.67, 2);
 
+		// Verlet integration
 		for (const j of joints) {
 			const vx = (j.x - j.prevX) * RAGDOLL_DAMPING;
 			const vy = (j.y - j.prevY) * RAGDOLL_DAMPING;
@@ -193,6 +235,7 @@ export class StickmanPhysics {
 			j.y += vy + RAGDOLL_GRAVITY * normalDt * normalDt * 100;
 		}
 
+		// Distance constraints
 		for (let iter = 0; iter < RAGDOLL_CONSTRAINT_ITERATIONS; iter++) {
 			for (const [aName, bName] of BONES) {
 				const a = joints.find((j) => j.name === aName)!;
@@ -215,38 +258,67 @@ export class StickmanPhysics {
 			}
 		}
 
+		// Surface collision with restitution bounce
 		let feetGrounded = 0;
 		for (const j of joints) {
 			const surface = this.findSurface(j.x, j.y, 20);
 			if (surface && j.y > surface.y && j.x >= surface.xMin && j.x <= surface.xMax) {
+				const vy = j.y - j.prevY; // current vertical velocity
 				j.y = surface.y;
-				j.prevY = j.y;
+				// Reflect a fraction of the velocity for bounce
+				j.prevY = j.y + vy * RAGDOLL_RESTITUTION;
+				// Friction on horizontal velocity
 				j.prevX = j.x - (j.x - j.prevX) * 0.7;
+
 				if (j.name === 'footL' || j.name === 'footR') feetGrounded++;
 			}
 		}
 
+		// Build pose override
 		const ragdollPose: Partial<Pose> = {};
 		for (const j of joints) {
 			ragdollPose[j.name] = { x: j.x, y: j.y };
 		}
 		this.fig.poseOverride = ragdollPose as Pose;
 
+		// Track hip for position reference
 		const hip = joints.find((j) => j.name === 'hip')!;
 		this.fig.x = hip.x;
 		this.fig.y = hip.y;
 
+		// Feet-on-surface recovery (original logic)
 		if (feetGrounded >= 1) {
 			this.ragdollGroundTimer += dt;
 			if (this.ragdollGroundTimer > RAGDOLL_RECOVERY_DELAY) {
 				this.recoverFromRagdoll();
+				return;
 			}
 		} else {
 			this.ragdollGroundTimer = 0;
 		}
 
+		// Motionless ragdoll timeout — force-recover when settled but feet
+		// didn't land on a recognized surface (e.g., scattered outside inset bounds)
+		const totalVelocitySq = joints.reduce((sum, j) => {
+			const vx = j.x - j.prevX;
+			const vy = j.y - j.prevY;
+			return sum + vx * vx + vy * vy;
+		}, 0);
+
+		if (totalVelocitySq < MOTIONLESS_THRESHOLD_SQ) {
+			this.ragdollMotionlessTimer += dt;
+			if (this.ragdollMotionlessTimer > RAGDOLL_MOTIONLESS_TIMEOUT) {
+				this.resetToNearestSurface();
+				return;
+			}
+		} else {
+			this.ragdollMotionlessTimer = 0;
+		}
+
 		this.fig.tick(dt);
 	}
+
+	// ── Recovery ─────────────────────────────────────────────────────
 
 	private recoverFromRagdoll(): void {
 		this.ragdolling = false;
@@ -263,9 +335,9 @@ export class StickmanPhysics {
 			this.fig.y = surface.y;
 			this.grounded = true;
 		} else {
-			this.fig.x = avgFootX;
-			this.fig.y = avgFootY;
-			this.grounded = false;
+			// Feet aren't on a surface — fall through to resetToNearestSurface
+			this.resetToNearestSurface();
+			return;
 		}
 
 		this.vx = 0;
@@ -274,6 +346,69 @@ export class StickmanPhysics {
 		this.fig.setState('jump');
 		this.fig.animParams = { ...this.fig.animParams, subPhase: 0.9 };
 		this.ragdollJoints = [];
+		this.ragdollMotionlessTimer = 0;
+		this.onLanded?.();
+	}
+
+	// ── Out-of-Bounds Detection & Reset ──────────────────────────────
+
+	private isOutOfBounds(): boolean {
+		if (!this.containerBounds) return false;
+		const { x, y } = this.fig;
+		return (
+			x < -OOB_MARGIN ||
+			x > this.containerBounds.width + OOB_MARGIN ||
+			y > this.containerBounds.height + OOB_MARGIN
+			// Don't check y < 0 — stickmen can briefly be above during jumps
+		);
+	}
+
+	/**
+	 * Reset the stickman to the nearest known surface.
+	 * Used when the stickman falls out of bounds or ragdoll is stuck.
+	 */
+	private resetToNearestSurface(): void {
+		// Cancel ragdoll state
+		this.ragdolling = false;
+		this.ragdollJoints = [];
+		this.ragdollGroundTimer = 0;
+		this.ragdollMotionlessTimer = 0;
+		this.fig.poseOverride = null;
+		this.vx = 0;
+		this.vy = 0;
+
+		// Find the nearest surface to the stickman's current position
+		const figX = this.fig.x;
+		const figY = this.fig.y;
+		let bestSurface: NavSurface | null = null;
+		let bestDist = Infinity;
+
+		for (const s of this.surfaces) {
+			// Clamp X to the surface range for distance calculation
+			const clampedX = Math.max(s.x1, Math.min(figX, s.x2));
+			const dx = clampedX - figX;
+			const dy = s.y1 - figY;
+			const dist = dx * dx + dy * dy;
+			if (dist < bestDist) {
+				bestDist = dist;
+				bestSurface = s;
+			}
+		}
+
+		if (bestSurface) {
+			// Place stickman at the center of the nearest surface
+			const centerX = (bestSurface.x1 + bestSurface.x2) / 2;
+			this.fig.x = centerX;
+			this.fig.y = bestSurface.y1;
+			this.grounded = true;
+		} else {
+			// No surfaces at all — just place at a default position
+			this.fig.x = 100;
+			this.fig.y = 100;
+			this.grounded = false;
+		}
+
+		this.fig.setState('idle');
 		this.onLanded?.();
 	}
 }
