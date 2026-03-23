@@ -14,6 +14,9 @@ const MIN_ELEMENT_WIDTH = 15;
 const NODE_SPACING = 40;
 const MIN_BORDER_WIDTH = 0.5;
 const FIGURE_HEIGHT = 24;
+const FIGURE_HALF_WIDTH = 12;
+/** Minimum distance from container top for a walkable surface (body + margin) */
+const TOP_MARGIN = Math.ceil(FIGURE_HEIGHT * 1.2);
 const JUMP_MAX_GAP = 100;
 const JUMP_MAX_DY = FIGURE_HEIGHT * 2;
 const ROPE_HORIZONTAL_MARGIN = NODE_SPACING * 0.8;
@@ -111,6 +114,7 @@ export class NavGrid {
 	/** The container element to scope scanning to */
 	private container: HTMLElement | null = null;
 	private containerRect = { left: 0, top: 0 };
+	private containerSize = { width: 0, height: 0 };
 
 	constructor(config: NavGridConfig = {}) {
 		this.config = config;
@@ -136,6 +140,7 @@ export class NavGrid {
 			left: cr.left + window.scrollX,
 			top: cr.top + window.scrollY
 		};
+		this.containerSize = { width: cr.width, height: cr.height };
 
 		this.extractSurfaces(this.queryElements());
 		this.generateNodes();
@@ -276,7 +281,13 @@ export class NavGrid {
 			};
 
 			// Skip surfaces too close to container top — stickman body would overflow
-			if (rect.top < FIGURE_HEIGHT) continue;
+			if (rect.top < TOP_MARGIN) continue;
+
+			// Inset surface edges from container sides so stickmen don't overflow
+			rect.left = Math.max(rect.left, FIGURE_HALF_WIDTH);
+			rect.right = Math.min(rect.right, this.containerSize.width - FIGURE_HALF_WIDTH);
+			if (rect.right - rect.left < MIN_ELEMENT_WIDTH) continue;
+			rect.width = rect.right - rect.left;
 
 			const forceInclude = el.matches(selector);
 
