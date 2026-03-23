@@ -20,6 +20,8 @@ const MIN_BORDER_WIDTH = 0.5;
 const TOP_MARGIN = STICKMAN_MAX_HEIGHT + BASE_BODY.headRadius;
 const JUMP_MAX_GAP = 100;
 const JUMP_MAX_DY = STICKMAN_MAX_HEIGHT * 2;
+/** Number of segments to divide the overlap region into for interior jump points */
+const JUMP_CONNECTION_SEGMENTS = 4;
 const ROPE_HORIZONTAL_MARGIN = NODE_SPACING * 0.8;
 const TALL_ELEMENT_THRESHOLD = STICKMAN_MAX_HEIGHT * 3;
 const SURFACE_MERGE_GAP = 15;
@@ -417,6 +419,7 @@ export class NavGrid {
 	}
 
 	private connectJumpEdges(): void {
+		// Index nodes by surface, sorted by x
 		const nodesBySurface = new Map<string, NavNode[]>();
 		for (const node of this.nodes) {
 			let list = nodesBySurface.get(node.surfaceId);
@@ -430,8 +433,46 @@ export class NavGrid {
 			list.sort((a, b) => a.x - b.x);
 		}
 
-		const MID_THRESHOLD = NODE_SPACING * 3;
 		const connected = new Set<string>();
+
+		/** Try to add a jump edge from srcNode to the closest reachable
+		 *  node on dstNodes. Returns true if an edge was added. */
+		const tryConnect = (srcNode: NavNode, dstNodes: NavNode[], targetX: number): boolean => {
+			const dst = closestNodeAtX(dstNodes, targetX);
+			if (!dst) return false;
+
+			const ndx = Math.abs(srcNode.x - dst.x);
+			if (ndx > JUMP_MAX_GAP) return false;
+			const ndy = Math.abs(srcNode.y - dst.y);
+			if (ndy > JUMP_MAX_DY) return false;
+
+			const pairKey =
+				srcNode.id < dst.id ? `${srcNode.id}:${dst.id}` : `${dst.id}:${srcNode.id}`;
+			if (connected.has(pairKey)) return false;
+			connected.add(pairKey);
+
+			const dist = Math.sqrt(ndx * ndx + ndy * ndy);
+			this.addEdge(srcNode.id, dst.id, dist * 1.5, 'jump');
+			return true;
+		};
+
+		/** At a given X position on srcNodes, try connecting to dstNodes
+		 *  in both directions (left and right of srcX). */
+		const connectBidirectional = (
+			srcNodes: NavNode[],
+			srcX: number,
+			dstNodes: NavNode[]
+		): void => {
+			const src = closestNodeAtX(srcNodes, srcX);
+			if (!src) return;
+
+			// Try connecting to the closest node to the left on the other surface
+			tryConnect(src, dstNodes, src.x - NODE_SPACING);
+			// Try connecting to the closest node to the right on the other surface
+			tryConnect(src, dstNodes, src.x + NODE_SPACING);
+			// Also try straight across (same X) for vertically-aligned surfaces
+			tryConnect(src, dstNodes, src.x);
+		};
 
 		for (let i = 0; i < this.surfaces.length; i++) {
 			for (let j = i + 1; j < this.surfaces.length; j++) {
@@ -446,6 +487,7 @@ export class NavGrid {
 				const bLeft = Math.min(sB.x1, sB.x2);
 				const bRight = Math.max(sB.x1, sB.x2);
 
+				// Check surfaces are within jump range horizontally
 				const gapLeft = Math.max(aLeft, bLeft);
 				const gapRight = Math.min(aRight, bRight);
 				if (gapLeft > gapRight) {
@@ -456,82 +498,24 @@ export class NavGrid {
 				const nodesB = nodesBySurface.get(sB.id);
 				if (!nodesA || !nodesB || nodesA.length === 0 || nodesB.length === 0) continue;
 
-				const edgeReps: {
-					srcNodes: NavNode[];
-					srcX: number;
-					dstNodes: NavNode[];
-					edgeSide: 'left' | 'right';
-				}[] = [
-					{
-						srcNodes: nodesA,
-						srcX: nodesA[0].x,
-						dstNodes: nodesB,
-						edgeSide: 'left'
-					},
-					{
-						srcNodes: nodesA,
-						srcX: nodesA[nodesA.length - 1].x,
-						dstNodes: nodesB,
-						edgeSide: 'right'
-					},
-					{
-						srcNodes: nodesB,
-						srcX: nodesB[0].x,
-						dstNodes: nodesA,
-						edgeSide: 'left'
-					},
-					{
-						srcNodes: nodesB,
-						srcX: nodesB[nodesB.length - 1].x,
-						dstNodes: nodesA,
-						edgeSide: 'right'
-					}
-				];
+				// Jumpable region: where nodes on A could reach nodes on B
+				const regionLeft = Math.max(aLeft, bLeft) - JUMP_MAX_GAP;
+				const regionRight = Math.min(aRight, bRight) + JUMP_MAX_GAP;
+				if (regionLeft >= regionRight) continue;
 
-				const nudge = NODE_SPACING;
+				// 1. Edge connections: leftmost and rightmost of each surface
+				connectBidirectional(nodesA, nodesA[0].x, nodesB);
+				connectBidirectional(nodesA, nodesA[nodesA.length - 1].x, nodesB);
+				connectBidirectional(nodesB, nodesB[0].x, nodesA);
+				connectBidirectional(nodesB, nodesB[nodesB.length - 1].x, nodesA);
 
-				for (const { srcNodes, srcX, dstNodes, edgeSide } of edgeReps) {
-					const nSrc = closestNodeAtX(srcNodes, srcX);
-					const landingX = edgeSide === 'left' ? srcX - nudge : srcX + nudge;
-					const nDst = closestNodeAtX(dstNodes, landingX);
-					if (!nSrc || !nDst) continue;
-
-					const ndx = Math.abs(nSrc.x - nDst.x);
-					if (ndx > JUMP_MAX_GAP) continue;
-					const ndy = Math.abs(nSrc.y - nDst.y);
-					if (ndy > JUMP_MAX_DY) continue;
-
-					const pairKey =
-						nSrc.id < nDst.id ? `${nSrc.id}:${nDst.id}` : `${nDst.id}:${nSrc.id}`;
-					if (connected.has(pairKey)) continue;
-					connected.add(pairKey);
-
-					const dist = Math.sqrt(ndx * ndx + ndy * ndy);
-					this.addEdge(nSrc.id, nDst.id, dist * 1.5, 'jump');
-				}
-
-				// Midpoint for wide overlaps
-				const regionLeft =
-					Math.max(nodesA[0].x, nodesB[0].x) - JUMP_MAX_GAP;
-				const regionRight =
-					Math.min(nodesA[nodesA.length - 1].x, nodesB[nodesB.length - 1].x) +
-					JUMP_MAX_GAP;
-				if (regionRight - regionLeft > MID_THRESHOLD) {
-					const mid = (regionLeft + regionRight) / 2;
-					const nA = closestNodeAtX(nodesA, mid);
-					const nB = closestNodeAtX(nodesB, mid);
-					if (nA && nB) {
-						const ndx = Math.abs(nA.x - nB.x);
-						const ndy = Math.abs(nA.y - nB.y);
-						if (ndx <= JUMP_MAX_GAP && ndy <= JUMP_MAX_DY) {
-							const pairKey =
-								nA.id < nB.id ? `${nA.id}:${nB.id}` : `${nB.id}:${nA.id}`;
-							if (!connected.has(pairKey)) {
-								connected.add(pairKey);
-								const dist = Math.sqrt(ndx * ndx + ndy * ndy);
-								this.addEdge(nA.id, nB.id, dist * 1.5, 'jump');
-							}
-						}
+				// 2. Interior connections: divide overlap into segments
+				if (regionRight - regionLeft > NODE_SPACING * 2) {
+					for (let seg = 1; seg < JUMP_CONNECTION_SEGMENTS; seg++) {
+						const t = seg / JUMP_CONNECTION_SEGMENTS;
+						const x = regionLeft + (regionRight - regionLeft) * t;
+						connectBidirectional(nodesA, x, nodesB);
+						connectBidirectional(nodesB, x, nodesA);
 					}
 				}
 			}
