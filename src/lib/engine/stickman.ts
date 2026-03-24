@@ -77,6 +77,24 @@ export class Stickman implements Renderable {
 		return { x: this.x, y: this.y };
 	}
 
+	/** Current animation frame index (increments each pose-update tick). */
+	get currentFrameIndex(): number {
+		return this.frameIndex;
+	}
+
+	/** Milliseconds between pose updates (stop-motion rate). */
+	get poseMsPerFrame(): number {
+		return this.poseInterval;
+	}
+
+	/**
+	 * Returns the frameCount of the named animation, or null if not registered.
+	 * Used by PlayAnimationAction to know when the animation is complete.
+	 */
+	getAnimationFrameCount(animId: string): number | null {
+		return this.registry.get(animId)?.frameCount ?? null;
+	}
+
 	/** Advance animation timing. Call every frame with delta in ms. */
 	tick(deltaMs: number): void {
 		this.tickAccumulator += deltaMs;

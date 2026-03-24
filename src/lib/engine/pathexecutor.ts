@@ -21,6 +21,12 @@ export class PathExecutor {
 	sprintSpeed: number | null = null;
 	sprintAnimId: string = 'walk';
 
+	/**
+	 * When true, the executor idles each tick without advancing path steps.
+	 * Set by StickmanController when a path is suspended (e.g. during playAnimation).
+	 */
+	suspended = false;
+
 	onPathComplete: (() => void) | null = null;
 
 	constructor(actions: StickmanActions, physics: StickmanPhysics, grid: NavGrid) {
@@ -63,6 +69,15 @@ export class PathExecutor {
 
 	update(dt: number): void {
 		this.physics.update(dt, this.actions.busy);
+
+		// When suspended, keep physics ticking but hold path execution.
+		// The stickman idles in place until resume() is called.
+		if (this.suspended) {
+			this.actions.fig.setState('idle');
+			this.actions.fig.tick(dt);
+			return;
+		}
+
 		this.actions.update(dt);
 
 		if (this.physics.surfaceLost) {

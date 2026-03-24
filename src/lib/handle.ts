@@ -114,6 +114,26 @@ export class StickmanHandle {
 
 	// ── Actions ──────────────────────────────────────────────────────
 
+	/**
+	 * Play a registered animation once to completion, then return to idle.
+	 * Suspends the current path (if any) for the duration and resumes it afterwards.
+	 * No-op if the animation ID is not registered.
+	 */
+	playAnimation(animationId: string, options?: { onComplete?: () => void }): void {
+		const entry = this.getEntry();
+		if (!entry) return;
+
+		// Suspend the active path so the stickman idles in place during the animation.
+		const activePath = entry.controller.currentPath;
+		activePath?.suspend();
+
+		entry.actions.playOnce(animationId, () => {
+			// Resume the path first, then fire the user callback.
+			activePath?.resume();
+			options?.onComplete?.();
+		});
+	}
+
 	teleport(position: Point): void {
 		const entry = this.getEntry();
 		if (!entry) return;

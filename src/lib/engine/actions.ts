@@ -632,6 +632,52 @@ class RopeSwingAction implements Action {
 	}
 }
 
+class PlayAnimationAction implements Action {
+	type = 'playAnimation';
+	/** Pose frames rendered so far (increments at the stickman's stop-motion rate). */
+	private poseFramesRendered = 0;
+	private onComplete: (() => void) | undefined;
+
+	constructor(
+		private animationId: string,
+		private frameCount: number,
+		onComplete: (() => void) | undefined
+	) {
+		this.onComplete = onComplete;
+	}
+
+	update(dt: number, fig: Stickman): boolean {
+		// setState resets fig's internal frameIndex when the animation changes.
+		fig.setState(this.animationId);
+
+		const prevFrame = fig.currentFrameIndex;
+		fig.tick(dt);
+		const didAdvance = fig.currentFrameIndex !== prevFrame;
+
+		if (didAdvance) {
+			this.poseFramesRendered++;
+		}
+
+		if (this.poseFramesRendered >= this.frameCount) {
+			const cb = this.onComplete;
+			this.onComplete = undefined;
+			cb?.();
+			return false;
+		}
+
+		return true;
+	}
+
+	getRenderables(): Renderable[] {
+		return [];
+	}
+
+	cleanup(): void {
+		// Cancelled mid-animation — discard onComplete without triggering it.
+		this.onComplete = undefined;
+	}
+}
+
 // ── StickmanActions Class ────────────────────────────────────────────
 
 export class StickmanActions {
@@ -723,6 +769,17 @@ export class StickmanActions {
 			targetY,
 			color ?? this.fig.color
 		);
+	}
+
+	/**
+	 * Play a registered animation once to completion, then return to idle.
+	 * Calls onComplete when the animation finishes naturally.
+	 * If the animation ID is not registered, the call is a no-op.
+	 */
+	playOnce(animationId: string, onComplete?: () => void): void {
+		const frameCount = this.fig.getAnimationFrameCount(animationId);
+		if (frameCount === null) return;
+		this.currentAction = new PlayAnimationAction(animationId, frameCount, onComplete);
 	}
 
 	cancel(): void {

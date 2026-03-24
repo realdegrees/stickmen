@@ -30,11 +30,16 @@ class PathHandleImpl implements PathHandle {
 	readonly priority: boolean;
 	private emitter = new EventEmitter<PathEventMap>();
 	private _done = false;
+	private _suspended = false;
 	private _onRelease: () => void;
 
 	constructor(priority: boolean, onRelease: () => void) {
 		this.priority = priority;
 		this._onRelease = onRelease;
+	}
+
+	get suspended(): boolean {
+		return this._suspended;
 	}
 
 	on<K extends keyof PathEventMap>(
@@ -49,15 +54,27 @@ class PathHandleImpl implements PathHandle {
 		this._onRelease();
 	}
 
+	suspend(): void {
+		if (this._done || this._suspended) return;
+		this._suspended = true;
+	}
+
+	resume(): void {
+		if (!this._suspended) return;
+		this._suspended = false;
+	}
+
 	_emitArrived(position: { x: number; y: number }): void {
 		if (this._done) return;
 		this._done = true;
+		this._suspended = false;
 		this.emitter.emit('arrived', { position });
 	}
 
 	_emitAborted(): void {
 		if (this._done) return;
 		this._done = true;
+		this._suspended = false;
 		this.emitter.emit('aborted', {});
 	}
 }
@@ -219,7 +236,10 @@ export class StickmanController {
 		// 3. Sprint
 		this.updateSprint();
 
-		// 4. Executor
+		// 4. Sync suspension state to executor
+		this.executor.suspended = this.currentPathHandle?.suspended ?? false;
+
+		// 5. Executor
 		this.executor.update(dt);
 	}
 

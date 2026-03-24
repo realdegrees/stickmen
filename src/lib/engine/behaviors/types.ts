@@ -13,6 +13,7 @@
  * PathHandle — returned by tryPathTo / tryPathRandom / tryPathAway / tryPathToElement.
  * Subscribe to 'arrived' or 'aborted' to react when navigation completes or is
  * interrupted. Call release() to voluntarily end a priority path early.
+ * Call suspend() / resume() to temporarily pause execution without discarding the path.
  */
 
 import type { Point } from '../types.js';
@@ -38,6 +39,8 @@ export interface PathOptions {
 export interface PathHandle {
 	/** Whether this path was started with { priority: true }. */
 	readonly priority: boolean;
+	/** Whether this path is currently suspended. */
+	readonly suspended: boolean;
 	/** Subscribe to 'arrived' or 'aborted'. Returns an unsubscribe function. */
 	on<K extends keyof PathEventMap>(
 		event: K,
@@ -48,6 +51,17 @@ export interface PathHandle {
 	 * Emits 'aborted' and clears the active path. No-op if already done.
 	 */
 	release(): void;
+	/**
+	 * Pause path execution without discarding it. The stickman idles in place.
+	 * Call resume() to continue from where it left off.
+	 * No-op if the path is already done or suspended.
+	 */
+	suspend(): void;
+	/**
+	 * Resume a previously suspended path.
+	 * No-op if the path is not suspended or is already done.
+	 */
+	resume(): void;
 }
 
 // ── Behavior API ──────────────────────────────────────────────────────
@@ -78,6 +92,16 @@ export interface BehaviorHandle {
 	tryPathToElement(element: HTMLElement, opts?: PathOptions): PathHandle | null;
 	/** Clear the current path. Returns false if a priority path is blocking. */
 	tryClearPath(): boolean;
+
+	/**
+	 * Play a registered animation once to completion, then return to idle.
+	 * If a path is active, it is automatically suspended for the duration and
+	 * resumed when the animation finishes.
+	 * If the animation ID is not registered, the call is a no-op.
+	 * @param animationId - The ID of the animation to play (must be registered).
+	 * @param options.onComplete - Optional callback fired when the animation finishes naturally.
+	 */
+	playAnimation(animationId: string, options?: { onComplete?: () => void }): void;
 
 	on<K extends keyof StickmanEventMap>(
 		event: K,
