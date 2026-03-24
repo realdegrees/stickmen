@@ -8,6 +8,7 @@
 import { CanvasRenderer } from './renderer.js';
 import { NavGrid } from './navgrid.js';
 import { Stickman, createStickman } from './stickman.js';
+import { SpeechBubbleStack } from './speech-bubble.js';
 import { AnimationRegistry } from './animations/registry.js';
 import type { AnimationResolver } from './animations/types.js';
 import { HatRegistry } from './hats.js';
@@ -58,6 +59,7 @@ export class StickmenEngine {
 	readonly hatRegistry: HatRegistry;
 
 	private stickmen = new Map<string, StickmanEntry>();
+	private speechStacks = new Map<string, SpeechBubbleStack>();
 	private nextId = 0;
 
 	private _initialized = false;
@@ -359,6 +361,38 @@ export class StickmenEngine {
 		this.renderer?.removeRenderable(entry.fig);
 		entry.emitter.emit('destroyed', {});
 		this.stickmen.delete(id);
+
+		// Speech stack is tied to fig.active — it will auto-cull from the renderer
+		// on the next tick. Remove from our map so it can be GC'd.
+		this.speechStacks.delete(id);
+	}
+
+	// ── Dialogue ─────────────────────────────────────────────────────
+
+	/**
+	 * Show a speech bubble above the stickman with the given id.
+	 * @param durationMs - Duration in milliseconds.
+	 * @param suspendPath - When true, the active path is suspended until the bubble expires.
+	 */
+	say(id: string, text: string, durationMs: number, suspendPath = false): void {
+		const entry = this.stickmen.get(id);
+		if (!entry || !this.renderer) return;
+
+		let stack = this.speechStacks.get(id);
+		if (!stack) {
+			stack = new SpeechBubbleStack(entry.fig);
+			this.speechStacks.set(id, stack);
+			this.renderer.addRenderable(stack);
+		}
+
+		let onExpire: (() => void) | undefined;
+		if (suspendPath) {
+			const activePath = entry.controller.currentPath;
+			activePath?.suspend();
+			onExpire = () => activePath?.resume();
+		}
+
+		stack.say(text, durationMs, onExpire);
 	}
 
 	getEntry(id: string): StickmanEntry | undefined {

@@ -22,8 +22,8 @@ export class WanderBehavior implements StickmanBehavior {
 	/** Set to make the stickman flee from a point instead of wandering. */
 	fleeFrom: Point | null = null;
 
-	private _active = false;
-	private timeout: ReturnType<typeof setTimeout> | undefined;
+	protected _active = false;
+	protected timeout: ReturnType<typeof setTimeout> | undefined;
 
 	onAttach(handle: BehaviorHandle): void {
 		this._active = true;
@@ -42,10 +42,17 @@ export class WanderBehavior implements StickmanBehavior {
 		}
 	}
 
-	private _wander(handle: BehaviorHandle): void {
+	protected _wander(handle: BehaviorHandle): void {
 		if (!this._active) return;
 		const path = handle.tryPathRandom();
-		if (!path) return;
+		if (!path) {
+			// No path available right now — retry after a short delay.
+			this.timeout = setTimeout(
+				() => { if (handle.alive && this._active) this._wander(handle); },
+				500
+			);
+			return;
+		}
 		path.on('arrived', () => {
 			if (!this._active || this.fleeFrom) return;
 			this.timeout = setTimeout(
@@ -76,11 +83,11 @@ export class FollowBehavior implements StickmanBehavior {
 	/** Minimum pixel movement required before re-pathing. */
 	readonly minDelta = 40;
 
-	private _target: Point | null = null;
-	private _mouseHandler: ((e: MouseEvent) => void) | undefined;
-	private _timer: ReturnType<typeof setInterval> | undefined;
-	private _lastX = 0;
-	private _lastY = 0;
+	protected _target: Point | null = null;
+	protected _mouseHandler: ((e: MouseEvent) => void) | undefined;
+	protected _timer: ReturnType<typeof setInterval> | undefined;
+	protected _lastX = 0;
+	protected _lastY = 0;
 
 	onAttach(handle: BehaviorHandle): void {
 		const el = handle.container;

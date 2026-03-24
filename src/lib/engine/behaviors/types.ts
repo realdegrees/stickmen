@@ -103,6 +103,14 @@ export interface BehaviorHandle {
 	 */
 	playAnimation(animationId: string, options?: { onComplete?: () => void }): void;
 
+	/**
+	 * Show a speech bubble above the stickman for the given duration (in seconds).
+	 * Multiple calls stack bubbles — newest at the bottom, oldest at the top.
+	 * Each bubble shrinks away when its duration expires.
+	 * @param options.suspendPath - If true, suspends the active path until the bubble expires.
+	 */
+	say(text: string, duration: number, options?: { suspendPath?: boolean }): void;
+
 	on<K extends keyof StickmanEventMap>(
 		event: K,
 		handler: (data: StickmanEventMap[K]) => void

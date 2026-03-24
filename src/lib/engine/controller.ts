@@ -30,7 +30,7 @@ class PathHandleImpl implements PathHandle {
 	readonly priority: boolean;
 	private emitter = new EventEmitter<PathEventMap>();
 	private _done = false;
-	private _suspended = false;
+	private _suspendCount = 0;
 	private _onRelease: () => void;
 
 	constructor(priority: boolean, onRelease: () => void) {
@@ -39,7 +39,7 @@ class PathHandleImpl implements PathHandle {
 	}
 
 	get suspended(): boolean {
-		return this._suspended;
+		return this._suspendCount > 0;
 	}
 
 	on<K extends keyof PathEventMap>(
@@ -55,26 +55,25 @@ class PathHandleImpl implements PathHandle {
 	}
 
 	suspend(): void {
-		if (this._done || this._suspended) return;
-		this._suspended = true;
+		if (this._done) return;
+		this._suspendCount++;
 	}
 
 	resume(): void {
-		if (!this._suspended) return;
-		this._suspended = false;
+		if (this._suspendCount > 0) this._suspendCount--;
 	}
 
 	_emitArrived(position: { x: number; y: number }): void {
 		if (this._done) return;
 		this._done = true;
-		this._suspended = false;
+		this._suspendCount = 0;
 		this.emitter.emit('arrived', { position });
 	}
 
 	_emitAborted(): void {
 		if (this._done) return;
 		this._done = true;
-		this._suspended = false;
+		this._suspendCount = 0;
 		this.emitter.emit('aborted', {});
 	}
 }

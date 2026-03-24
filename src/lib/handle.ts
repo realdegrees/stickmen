@@ -134,6 +134,16 @@ export class StickmanHandle {
 		});
 	}
 
+	/**
+	 * Show a speech bubble above the stickman for the given duration.
+	 * @param duration - Duration in seconds.
+	 * @param options.suspendPath - If true, suspends the active path until the bubble expires.
+	 * Multiple calls stack: newest bubble sits closest to the head.
+	 */
+	say(text: string, duration: number, options?: { suspendPath?: boolean }): void {
+		this.engine.say(this.id, text, duration * 1000, options?.suspendPath ?? false);
+	}
+
 	teleport(position: Point): void {
 		const entry = this.getEntry();
 		if (!entry) return;

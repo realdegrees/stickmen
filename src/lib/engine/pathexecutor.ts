@@ -70,15 +70,18 @@ export class PathExecutor {
 	update(dt: number): void {
 		this.physics.update(dt, this.actions.busy);
 
-		// When suspended, keep physics ticking but hold path execution.
-		// The stickman idles in place until resume() is called.
+		// Always tick actions — PlayAnimationAction must run even while the
+		// path is suspended (it fires onComplete which calls resume()).
+		this.actions.update(dt);
+
+		// When suspended, don't advance path steps. If no action is playing,
+		// show idle until the path resumes.
 		if (this.suspended) {
-			this.actions.fig.setState('idle');
-			this.actions.fig.tick(dt);
+			if (!this.actions.busy) {
+				this.actions.fig.setState('idle');
+			}
 			return;
 		}
-
-		this.actions.update(dt);
 
 		if (this.physics.surfaceLost) {
 			this.physics.surfaceLost = false;

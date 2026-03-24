@@ -103,9 +103,15 @@ export class Stickman implements Renderable {
 			this.tickAccumulator -= this.poseInterval;
 			this.frameIndex++;
 
-			if (this.resolver && this.resolver.type === 'cyclic') {
-				const cycleFrames = this.resolver.frameCount;
-				this.phase = ((this.frameIndex % cycleFrames) / cycleFrames) * Math.PI * 2;
+			if (this.resolver) {
+				if (this.resolver.type === 'cyclic') {
+					const cycleFrames = this.resolver.frameCount;
+					this.phase = ((this.frameIndex % cycleFrames) / cycleFrames) * Math.PI * 2;
+				} else {
+					// oneshot: drive phase 0→1 over frameCount frames so keyframe
+					// interpolation works correctly (e.g. with PlayAnimationAction).
+					this.phase = Math.min(1, this.frameIndex / this.resolver.frameCount);
+				}
 			}
 
 			this.currentPose = this.calculatePose();

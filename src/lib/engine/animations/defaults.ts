@@ -16,8 +16,9 @@ import hang       from './data/hang.json'       with { type: 'json' };
 import grabbed    from './data/grabbed.json'    with { type: 'json' };
 import hide       from './data/hide.json'       with { type: 'json' };
 import ropeClimb  from './data/rope-climb.json' with { type: 'json' };
+import wave       from './data/wave.json'       with { type: 'json' };
 
-/** All 10 built-in animation definitions, keyed by id. */
+/** All built-in animation definitions, keyed by id. */
 export const DefaultAnimations = {
 	idle,
 	walk,
@@ -28,7 +29,8 @@ export const DefaultAnimations = {
 	hang,
 	grabbed,
 	hide,
-	'rope-climb': ropeClimb
+	'rope-climb': ropeClimb,
+	wave
 } as unknown as Record<string, KeyframeAnimationDef>;
 
 export function getDefaultAnimations(): AnimationResolver[] {

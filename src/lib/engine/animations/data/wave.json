@@ -1,0 +1,50 @@
+{
+  "id": "wave",
+  "type": "oneshot",
+  "frameCount": 24,
+  "keyframes": [
+    {
+      "t": 0.0,
+      "easing": "ease-out",
+      "joints": {
+        "torso": 0, "head": 0,
+        "shoulderL": 11, "elbowL": 6,
+        "shoulderR": -11, "elbowR": -6,
+        "hipL": 3, "kneeL": 0,
+        "hipR": -3, "kneeR": 0
+      }
+    },
+    {
+      "t": 0.18,
+      "easing": "ease-out",
+      "joints": {
+        "torso": 4, "head": 8,
+        "shoulderL": 6, "elbowL": 3,
+        "shoulderR": 152, "elbowR": 38
+      }
+    },
+    { "t": 0.36, "easing": "ease-in-out", "joints": { "elbowR": -42 } },
+    { "t": 0.52, "easing": "ease-in-out", "joints": { "elbowR": 38 } },
+    { "t": 0.68, "easing": "ease-in-out", "joints": { "elbowR": -42 } },
+    {
+      "t": 0.85,
+      "easing": "ease-in",
+      "joints": {
+        "torso": 0, "head": 0,
+        "shoulderL": 11, "elbowL": 6,
+        "shoulderR": -11, "elbowR": -6
+      }
+    },
+    {
+      "t": 1.0,
+      "easing": "linear",
+      "joints": {
+        "torso": 0, "head": 0,
+        "shoulderL": 11, "elbowL": 6,
+        "shoulderR": -11, "elbowR": -6,
+        "hipL": 3, "kneeL": 0,
+        "hipR": -3, "kneeR": 0
+      }
+    }
+  ]
+}

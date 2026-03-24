@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { StickmenStage, Behaviours, type StickmanHandle } from '$lib/index.js';
+	import { StickmenStage, Behaviours, WanderBehavior, type StickmanHandle, type BehaviorHandle } from '$lib/index.js';
 	import AnimationEditor from './AnimationEditor.svelte';
 	import HatBuilder from './HatBuilder.svelte';
 
@@ -10,7 +10,48 @@
 	let ropeVStage: ReturnType<typeof StickmenStage>;
 	let swingStage: ReturnType<typeof StickmenStage>;
 	let configStage: ReturnType<typeof StickmenStage>;
+	let dialogueStage: ReturnType<typeof StickmenStage>;
 	let playground: ReturnType<typeof StickmenStage>;
+
+	// ── GreetingBehavior ─────────────────────────────────────────────
+	// Extends WanderBehavior — inherits all wandering/retry logic.
+	// Only adds: cursor tracking + proximity greeting via say() + playAnimation().
+	class GreetingBehavior extends WanderBehavior {
+		private mouseX = -9999;
+		private mouseY = -9999;
+		private cooldown = 4500; // start ready to greet on first approach
+		private mouseHandler?: (e: MouseEvent) => void;
+
+		override onAttach(bh: BehaviorHandle): void {
+			super.onAttach(bh); // starts wandering
+			this.mouseHandler = (e: MouseEvent) => {
+				const rect = bh.container.getBoundingClientRect();
+				this.mouseX = e.clientX - rect.left + bh.container.scrollLeft;
+				this.mouseY = e.clientY - rect.top + bh.container.scrollTop;
+			};
+			bh.container.addEventListener('mousemove', this.mouseHandler);
+		}
+
+		override onDetach(bh: BehaviorHandle): void {
+			super.onDetach(bh); // stops wandering, clears timeout
+			if (this.mouseHandler) {
+				bh.container.removeEventListener('mousemove', this.mouseHandler);
+			}
+		}
+
+		override update(bh: BehaviorHandle, dt: number): void {
+			super.update(bh, dt); // flee logic from WanderBehavior
+			this.cooldown += dt;
+			const { x, y } = bh.position;
+			const dx = x - this.mouseX;
+			const dy = y - this.mouseY;
+			if (dx * dx + dy * dy < 60 * 60 && this.cooldown > 4500) {
+				bh.say('Hello!', 3, { suspendPath: true });
+				bh.playAnimation('wave');
+				this.cooldown = 0;
+			}
+		}
+	}
 
 	// ── Global state ─────────────────────────────────────────────────
 	let wanderers: StickmanHandle[] = $state([]);
@@ -42,6 +83,11 @@
 			behavior: Behaviours.Idle,
 			color: 'cyan',
 			bodyScale: { legLength: 0.5, armLength: 0.5, headSize: 0.5 }
+		});
+
+		dialogueStage.spawn({
+			behavior: new GreetingBehavior(),
+			color: 'green'
 		});
 	});
 
@@ -227,16 +273,73 @@
 		</div>
 	</section>
 
-	<!-- ── Playground ─────────────────────────────────────────────── -->
+	<!-- ── Dialogue & Animations ────────────────────────────────── -->
 
 	<section
 		class="demo-section"
 		role="group"
-		aria-label="Playground"
+		aria-label="Dialogue and animations demo"
+		onmouseenter={() => hoveredSection = 'dialogue'}
+		onmouseleave={() => hoveredSection = null}
+	>
+		<h2 class="demo-label">Dialogue &amp; Animations</h2>
+		<StickmenStage bind:this={dialogueStage} debug={debugFor('dialogue')}>
+			<div class="demo-dialogue">
+				<div class="card" data-walkable="top">
+					<h3>Move your cursor close</h3>
+					<p>The stickman wanders on its own and greets you when you hover nearby — driven by a custom behavior using <code>say()</code> and <code>playAnimation()</code>.</p>
+				</div>
+			</div>
+		</StickmenStage>
+
+		<div class="dialogue-info-grid">
+			<div class="dialogue-api-row">
+				<div class="card">
+					<h3>Speech Bubbles</h3>
+					<p>Call <code>say(text, duration)</code> on any stickman handle to show a speech bubble that follows the figure. Duration is in seconds. Multiple calls stack — newest closest to the head, each one shrinks away when it expires.</p>
+					<pre class="code-block"><code>fig.say("Hello!", 3);
+
+// Freeze movement while speaking:
+fig.say("Hello!", 3, {'{'} suspendPath: true {'}'});</code></pre>
+				</div>
+				<div class="card">
+					<h3>Custom Animations</h3>
+					<p><code>playAnimation(id)</code> plays a registered oneshot animation once to completion. The active path is automatically suspended for the duration and resumes when the animation finishes. Animations can be registered via the <code>animations</code> prop or at runtime.</p>
+					<pre class="code-block"><code>fig.playAnimation('wave');
+
+// Register via stage prop:
+&lt;StickmenStage animations={'{'}[myResolver]{'}'} /&gt;
+
+// Or at runtime:
+stage.registerAnimation(myResolver);</code></pre>
+				</div>
+			</div>
+			<div class="card">
+				<h3>Composing in Custom Behaviors</h3>
+				<p>Both <code>say()</code> and <code>playAnimation()</code> are available directly on the <code>BehaviorHandle</code> in every behavior's <code>update()</code>. Built-in behaviors like <code>WanderBehavior</code> expose their internals as <code>protected</code> — extend them to compose new behaviors without duplicating logic.</p>
+				<pre class="code-block"><code>class GreetBehavior extends WanderBehavior {'{'}
+  override update(bh, dt) {'{'}
+    super.update(bh, dt);           // inherited: wander + flee
+    if (nearCursor(bh)) {'{'}
+      bh.say("Hello!", 3, {'{'} suspendPath: true {'}'});
+      bh.playAnimation('wave');     // path suspends, resumes after
+    {'}'}
+  {'}'}
+{'}'}</code></pre>
+			</div>
+		</div>
+	</section>
+
+	<!-- ── Getting Started ────────────────────────────────────────── -->
+
+	<section
+		class="demo-section"
+		role="group"
+		aria-label="Getting Started"
 		onmouseenter={() => hoveredSection = 'playground'}
 		onmouseleave={() => hoveredSection = null}
 	>
-		<h2 class="demo-label">Playground</h2>
+		<h2 class="demo-label">Getting Started</h2>
 		<nav class="controls">
 			<div class="control-group">
 				<button onclick={spawnWanderer}>Add Wanderer</button>
@@ -274,33 +377,34 @@
 &lt;/StickmenStage&gt;</code></pre>
 				</div>
 
-				<div class="card-row">
-					<div class="card small" data-walkable>
-						<h3>Spawning</h3>
-						<p>Create stickmen with behavior, color, and hat options.</p>
-					<pre class="code-block"><code>const fig = stage.spawn({'{'}
-  behavior: Behaviours.Wander,
-  color: 'cyan',
-  hat: 'cowboy'
-{'}'});</code></pre>
-				</div>
 				<div class="card small" data-walkable>
-					<h3>Targeting</h3>
-					<p>Navigate to a point or follow the cursor with a behavior.</p>
-					<pre class="code-block"><code>const path = fig.tryPathTo(300, 100);
-path?.on('arrived', () => console.log('there!'));
-
-// Or follow the cursor:
-stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
-					</div>
-					<div class="card small" data-walkable>
-						<h3>Configuration</h3>
-						<p>Customize scanning, debug overlay, and proximity events.</p>
-						<pre class="code-block"><code>&lt;StickmenStage
+					<h3>Configuration</h3>
+					<p>Customize scanning, debug overlay, and proximity events.</p>
+					<pre class="code-block"><code>&lt;StickmenStage
   selector="[data-walkable]"
   debug={'{'}true{'}'}
   proximityThreshold={'{'}80{'}'}
 /&gt;</code></pre>
+				</div>
+
+				<div class="card-row">
+					<div class="card small" data-walkable>
+						<h3>Spawning</h3>
+						<p>Create stickmen with behavior, color, and hat options.</p>
+						<pre class="code-block"><code>const fig = stage.spawn({'{'}
+  behavior: Behaviours.Wander,
+  color: 'cyan',
+  hat: 'cowboy'
+{'}'});</code></pre>
+					</div>
+					<div class="card small" data-walkable>
+						<h3>Targeting</h3>
+						<p>Navigate to a point or follow the cursor with a behavior.</p>
+						<pre class="code-block"><code>const path = fig.tryPathTo(300, 100);
+path?.on('arrived', () => console.log('there!'));
+
+// Or follow the cursor:
+stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 					</div>
 				</div>
 
@@ -641,7 +745,7 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 
 	.card-row {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: 1fr 1fr;
 		gap: 1rem;
 	}
 
@@ -712,8 +816,8 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 
 	.expand-content {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1rem;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
 		padding: 0 1.5rem 1.5rem;
 	}
 
@@ -764,6 +868,25 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		margin-top: 1rem;
 	}
 
+	/* ── Dialogue & animations ───────────────────────────────────── */
+
+	.demo-dialogue {
+		padding-top: 80px;
+	}
+
+	.dialogue-info-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.dialogue-api-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+	}
+
 
 
 	/* ── Responsive ──────────────────────────────────────────────── */
@@ -779,7 +902,8 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		}
 
 		.card-row,
-		.expand-content {
+		.expand-content,
+		.dialogue-api-row {
 			grid-template-columns: 1fr;
 		}
 
