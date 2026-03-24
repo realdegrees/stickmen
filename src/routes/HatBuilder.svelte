@@ -3,6 +3,7 @@
 	import { DefaultHatDefs, createHat } from '$lib/index.js';
 	import type { HatShape, HatLayerDef } from '$lib/index.js';
 	import { createHistory } from '$lib/history.js';
+	import JsonModal from './JsonModal.svelte';
 
 	// ── Canvas constants ───────────────────────────────────────────────
 	const CW = 200, CH = 200;
@@ -425,6 +426,74 @@
 		shapes = shapes.map((s, idx) => idxs.includes(idx) ? { ...s, ...patch } as HatShape : s);
 	}
 
+	// ── Saved hats (localStorage) ──────────────────────────────────────
+
+	const LS_KEY = 'stickmen:saved-hats';
+	let savedHats: Record<string, { id: string; label: string; shapes: HatShape[] }> = $state({});
+	function loadSavedFromStorage() {
+		try {
+			const raw = localStorage.getItem(LS_KEY);
+			if (raw) savedHats = JSON.parse(raw);
+		} catch { savedHats = {}; }
+	}
+
+	function persistSaved() {
+		localStorage.setItem(LS_KEY, JSON.stringify(savedHats));
+	}
+
+	function saveHat() {
+		const existing = savedHats[hatId];
+		if (existing && !window.confirm(`Overwrite saved hat "${hatId}"?`)) return;
+		savedHats = {
+			...savedHats,
+			[hatId]: {
+				id: hatId,
+				label: hatLabel,
+				shapes: shapes.map(s => ({ ...s }) as HatShape)
+			}
+		};
+		persistSaved();
+	}
+
+	function loadSaved(id: string) {
+		const def = savedHats[id];
+		if (!def) return;
+		snap();
+		hatId = def.id; hatLabel = def.label;
+		shapes  = def.shapes.map(s => ({ ...s }) as HatShape);
+		mirrors = shapes.map(() => false);
+		selectedIdxs = shapes.length > 0 ? [0] : [];
+	}
+
+	function deleteSaved(id: string) {
+		const next = { ...savedHats };
+		delete next[id];
+		savedHats = next;
+		persistSaved();
+	}
+
+	let showJsonModal = $state(false);
+
+	function importFromJson() { showJsonModal = true; }
+
+	function onJsonConfirm(raw: string) {
+		showJsonModal = false;
+		try {
+			const def = JSON.parse(raw);
+			if (!def || typeof def !== 'object' || !def.id || !def.label || !Array.isArray(def.shapes)) {
+				alert('Invalid hat JSON: expected { id, label, shapes }');
+				return;
+			}
+			snap();
+			hatId = def.id; hatLabel = def.label;
+			shapes  = (def.shapes as HatShape[]).map(s => ({ ...s }) as HatShape);
+			mirrors = shapes.map(() => false);
+			selectedIdxs = shapes.length > 0 ? [0] : [];
+		} catch {
+			alert('Failed to parse JSON.');
+		}
+	}
+
 	// ── Presets ────────────────────────────────────────────────────────
 
 	function loadPreset(key: string) {
@@ -441,31 +510,47 @@
 
 	function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
-	function fmtShape(s: HatShape): string {
+	function cleanShape(s: HatShape): object {
 		const { type, x, y, size, ...rest } = s as HatShape & Record<string, unknown>;
-		const pos = `x: ${round3(x as number)}, y: ${round3(y as number)}, size: ${round3(size as number)}`;
-		const extras = Object.entries(rest)
-			.filter(([k, v]) => v !== undefined && !(k === 'thickness' && v === 1))
-			.map(([k, v]) => typeof v === 'boolean' ? `${k}: ${v}` : `${k}: ${round3(v as number)}`);
-		return `    { type: '${type}', ${pos}${extras.length ? ', ' + extras.join(', ') : ''} }`;
+		const out: Record<string, unknown> = {
+			type,
+			x: round3(x as number),
+			y: round3(y as number),
+			size: round3(size as number)
+		};
+		for (const [k, v] of Object.entries(rest)) {
+			if (v === undefined) continue;
+			if (k === 'thickness' && v === 1) continue;
+			out[k] = typeof v === 'number' ? round3(v) : v;
+		}
+		return out;
 	}
 
-	function expandedShapeLines(): string[] {
-		const lines: string[] = [];
+	function expandedShapes(): object[] {
+		const out: object[] = [];
 		for (let i = 0; i < shapes.length; i++) {
-			lines.push(fmtShape(shapes[i]));
-			if (mirrors[i]) lines.push(fmtShape(computeMirror(shapes[i])));
+			out.push(cleanShape(shapes[i]));
+			if (mirrors[i]) out.push(cleanShape(computeMirror(shapes[i])));
 		}
-		return lines;
+		return out;
 	}
 
 	let generatedCode = $derived(
 		shapes.length === 0
 			? '// add shapes to generate code'
-			: `createHat({\n  id: '${hatId}',\n  label: '${hatLabel}',\n  shapes: [\n${expandedShapeLines().join(',\n')}\n  ]\n})`
+			: JSON.stringify({ id: hatId, label: hatLabel, shapes: expandedShapes() }, null, 2)
 	);
 
 	async function copyCode() { await navigator.clipboard.writeText(generatedCode); }
+
+	function downloadJson() {
+		if (shapes.length === 0) return;
+		const blob = new Blob([generatedCode], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url; a.download = `${hatId}.json`; a.click();
+		URL.revokeObjectURL(url);
+	}
 
 	// ── Canvas rendering ────────────────────────────────────────────────
 
@@ -620,6 +705,7 @@
 	}
 
 	onMount(() => {
+		loadSavedFromStorage();
 		setupCanvas();
 		render();
 		return () => {};
@@ -632,6 +718,15 @@
 </script>
 
 <svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} onkeydown={onKeyDown} />
+
+{#if showJsonModal}
+	<JsonModal
+		title="load hat json"
+		placeholder={'{\n  "id": "my-hat",\n  "label": "My Hat",\n  "shapes": [...]\n}'}
+		onconfirm={onJsonConfirm}
+		oncancel={() => showJsonModal = false}
+	/>
+{/if}
 
 <div class="hb">
 	<div class="hb-layout">
@@ -701,8 +796,11 @@
 			<!-- Code -->
 			<div class="hb-code">
 				<div class="hb-code-hdr">
-					<span class="hb-micro-lbl">generated code</span>
-					<button class="hb-copy" onclick={copyCode}>copy</button>
+					<span class="hb-micro-lbl">generated json</span>
+					<div class="hb-code-actions">
+						<button class="hb-copy" onclick={copyCode} disabled={shapes.length === 0}>copy</button>
+						<button class="hb-copy" onclick={downloadJson} disabled={shapes.length === 0}>download</button>
+					</div>
 				</div>
 				<pre class="hb-code-body">{generatedCode}</pre>
 			</div>
@@ -876,7 +974,13 @@
 
 			<!-- Settings -->
 			<div class="hb-section">
-				<h4 class="hb-section-hdr">Settings</h4>
+				<div class="hb-section-hdr-row">
+					<h4 class="hb-section-hdr">Settings</h4>
+					<div class="hb-section-actions">
+						<button class="hb-btn hb-btn-save" onclick={saveHat} disabled={shapes.length === 0}>save</button>
+						<button class="hb-btn" onclick={importFromJson}>load json</button>
+					</div>
+				</div>
 				<div class="hb-field hb-field-vert">
 					<label class="hb-label" for="hb-id">ID</label>
 					<input id="hb-id" class="hb-input" type="text" bind:value={hatId} />
@@ -886,6 +990,24 @@
 					<input id="hb-lbl-in" class="hb-input" type="text" bind:value={hatLabel} />
 				</div>
 			</div>
+
+			<!-- Saved hats -->
+			{#if Object.keys(savedHats).length > 0}
+			{@const savedList = Object.values(savedHats).sort((a, b) => a.id.localeCompare(b.id))}
+			<div class="hb-section">
+				<h4 class="hb-section-hdr">Saved</h4>
+				<div class="hb-preset-list">
+					{#each savedList as entry}
+						<div class="hb-saved-row">
+							<button class="hb-preset hb-saved-load" onclick={() => loadSaved(entry.id)}>
+								{entry.label || entry.id}
+							</button>
+							<button class="hb-btn hb-btn-danger hb-saved-del" onclick={() => deleteSaved(entry.id)}>del</button>
+						</div>
+					{/each}
+				</div>
+			</div>
+			{/if}
 
 			<!-- Presets -->
 			<div class="hb-section">
@@ -1049,6 +1171,11 @@
 		flex-shrink: 0;
 	}
 
+	.hb-code-actions {
+		display: flex;
+		gap: 0.3rem;
+	}
+
 	.hb-copy {
 		background: none;
 		border: 1px solid #1e1e1e;
@@ -1060,7 +1187,8 @@
 		cursor: crosshair;
 		transition: border-color 0.15s, color 0.15s;
 	}
-	.hb-copy:hover { border-color: #383838; color: #999; }
+	.hb-copy:hover:not(:disabled) { border-color: #383838; color: #999; }
+	.hb-copy:disabled { opacity: 0.25; cursor: default; }
 
 	.hb-code-body {
 		flex: 1;
@@ -1225,4 +1353,51 @@
 		transition: border-color 0.1s, color 0.1s;
 	}
 	.hb-preset:hover { border-color: #2c2c2c; color: #aaa; }
+
+	/* ── Save / Saved list ── */
+
+	.hb-section-hdr-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.55rem;
+	}
+	.hb-section-hdr-row .hb-section-hdr { margin-bottom: 0; }
+
+	.hb-section-actions {
+		display: flex;
+		gap: 0.3rem;
+	}
+
+	.hb-btn-save {
+		color: hsl(190, 55%, 42%);
+		border-color: hsl(190, 40%, 18%);
+	}
+	.hb-btn-save:hover:not(:disabled) {
+		border-color: hsl(190, 50%, 28%);
+		color: hsl(190, 70%, 62%);
+	}
+
+	.hb-btn-danger { color: #555; }
+	.hb-btn-danger:hover:not(:disabled) { border-color: hsl(0,40%,28%); color: hsl(0,58%,52%); }
+
+	.hb-saved-row {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.hb-saved-load {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.hb-saved-del {
+		flex-shrink: 0;
+		padding: 0.18rem 0.38rem;
+		font-size: 0.62rem;
+	}
 </style>

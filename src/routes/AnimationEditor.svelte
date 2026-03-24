@@ -5,6 +5,7 @@
 	import { BASE_BODY, BONES } from '$lib/engine/types.js';
 	import type { AnimKeyframe, JointAngles, EasingType, Pose } from '$lib/index.js';
 	import { createHistory } from '$lib/history.js';
+	import JsonModal from './JsonModal.svelte';
 
 	// ── Types ─────────────────────────────────────────────────────────
 
@@ -50,6 +51,87 @@
 
 	// LOOP canvas reference animation ('' = show current edit)
 	let loopRef = $state('');
+
+	// ── Saved animations (localStorage) ───────────────────────────────
+
+	const LS_KEY = 'stickmen:saved-animations';
+	let savedAnimations: Record<string, { id: string; type: 'cyclic' | 'oneshot'; frameCount: number; keyframes: AnimKeyframe[] }> = $state({});
+	function loadSavedFromStorage() {
+		try {
+			const raw = localStorage.getItem(LS_KEY);
+			if (raw) savedAnimations = JSON.parse(raw);
+		} catch { savedAnimations = {}; }
+	}
+
+	function persistSaved() {
+		localStorage.setItem(LS_KEY, JSON.stringify(savedAnimations));
+	}
+
+	function saveAnimation() {
+		const existing = savedAnimations[animId];
+		if (existing && !window.confirm(`Overwrite saved animation "${animId}"?`)) return;
+		savedAnimations = {
+			...savedAnimations,
+			[animId]: {
+				id: animId,
+				type: animType,
+				frameCount,
+				keyframes: keyframes.map(kf => ({
+					...kf,
+					joints: kf.joints ? { ...kf.joints } : undefined,
+					offset: kf.offset ? { ...kf.offset } : undefined
+				}))
+			}
+		};
+		persistSaved();
+	}
+
+	function loadSaved(id: string) {
+		const def = savedAnimations[id];
+		if (!def) return;
+		snap();
+		animId = def.id; animType = def.type; frameCount = def.frameCount;
+		keyframes = def.keyframes.map(kf => ({
+			...kf,
+			joints: kf.joints ? { ...kf.joints } : undefined,
+			offset: kf.offset ? { ...kf.offset } : undefined
+		}));
+		selectedKfIdx = null; selectedKfIdxs = []; scrubTime = 0;
+		if (keyframes.length > 0) selectKeyframe(0);
+	}
+
+	function deleteSaved(id: string) {
+		const next = { ...savedAnimations };
+		delete next[id];
+		savedAnimations = next;
+		persistSaved();
+	}
+
+	let showJsonModal = $state(false);
+
+	function importFromJson() { showJsonModal = true; }
+
+	function onJsonConfirm(raw: string) {
+		showJsonModal = false;
+		try {
+			const def = JSON.parse(raw);
+			if (!def || typeof def !== 'object' || !def.id || !def.type || !def.frameCount || !Array.isArray(def.keyframes)) {
+				alert('Invalid animation JSON: expected { id, type, frameCount, keyframes }');
+				return;
+			}
+			snap();
+			animId = def.id; animType = def.type; frameCount = def.frameCount;
+			keyframes = (def.keyframes as AnimKeyframe[]).map(kf => ({
+				...kf,
+				joints: kf.joints ? { ...kf.joints } : undefined,
+				offset: kf.offset ? { ...kf.offset } : undefined
+			}));
+			selectedKfIdx = null; selectedKfIdxs = []; scrubTime = 0;
+			if (keyframes.length > 0) selectKeyframe(0);
+		} catch {
+			alert('Failed to parse JSON.');
+		}
+	}
 
 	// ── Undo / Redo ────────────────────────────────────────────────────
 
@@ -279,31 +361,41 @@
 
 	function round1(n: number) { return Math.round(n * 10) / 10; }
 
-	function fmtKf(kf: AnimKeyframe): string {
-		const parts: string[] = [`t: ${round1(kf.t)}`];
-		if (kf.easing && kf.easing !== 'linear') parts.push(`easing: '${kf.easing}'`);
+	function cleanKf(kf: AnimKeyframe): object {
+		const out: Record<string, unknown> = { t: round1(kf.t) };
+		if (kf.easing && kf.easing !== 'linear') out.easing = kf.easing;
 		if (kf.joints) {
-			const jp = Object.entries(kf.joints)
-				.filter(([, v]) => v !== undefined)
-				.map(([k, v]) => `${k}: ${round1(v as number)}`);
-			if (jp.length) parts.push(`joints: { ${jp.join(', ')} }`);
+			const j: Record<string, number> = {};
+			for (const [k, v] of Object.entries(kf.joints)) {
+				if (v !== undefined) j[k] = round1(v as number);
+			}
+			if (Object.keys(j).length) out.joints = j;
 		}
 		if (kf.offset && (kf.offset.x || kf.offset.y)) {
-			const op: string[] = [];
-			if (kf.offset.x) op.push(`x: ${round1(kf.offset.x)}`);
-			if (kf.offset.y) op.push(`y: ${round1(kf.offset.y)}`);
-			if (op.length) parts.push(`offset: { ${op.join(', ')} }`);
+			const o: Record<string, number> = {};
+			if (kf.offset.x) o.x = round1(kf.offset.x);
+			if (kf.offset.y) o.y = round1(kf.offset.y);
+			if (Object.keys(o).length) out.offset = o;
 		}
-		return `    { ${parts.join(', ')} }`;
+		return out;
 	}
 
 	let generatedCode = $derived(
 		keyframes.length === 0
 			? '// drag a knob to add keyframes'
-			: `createKeyframeAnimation({\n  id: '${animId}',\n  type: '${animType}',\n  frameCount: ${frameCount},\n  keyframes: [\n${keyframes.map(fmtKf).join(',\n')}\n  ]\n})`
+			: JSON.stringify({ id: animId, type: animType, frameCount, keyframes: keyframes.map(cleanKf) }, null, 2)
 	);
 
 	async function copyCode() { await navigator.clipboard.writeText(generatedCode); }
+
+	function downloadJson() {
+		if (keyframes.length === 0) return;
+		const blob = new Blob([generatedCode], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url; a.download = `${animId}.json`; a.click();
+		URL.revokeObjectURL(url);
+	}
 
 	// ── Canvas rendering ──────────────────────────────────────────────
 
@@ -477,6 +569,7 @@
 	// ── Lifecycle ─────────────────────────────────────────────────────
 
 	onMount(() => {
+		loadSavedFromStorage();
 		[canvasLoop, canvasPrev, canvasCurrent, canvasNext].forEach(setupCanvas);
 		renderThree();
 		renderLoopCanvas();
@@ -505,6 +598,15 @@
 </script>
 
 <svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} onkeydown={onKeyDown} />
+
+{#if showJsonModal}
+	<JsonModal
+		title="load animation json"
+		placeholder={'{\n  "id": "my-animation",\n  "type": "cyclic",\n  "frameCount": 28,\n  "keyframes": [...]\n}'}
+		onconfirm={onJsonConfirm}
+		oncancel={() => showJsonModal = false}
+	/>
+{/if}
 
 {#snippet knob(key: string, label: string)}
 	{@const abs = displayAngle(key)}
@@ -709,8 +811,11 @@
 			<!-- Generated code -->
 			<div class="ae-code">
 				<div class="ae-code-hdr">
-					<span class="ae-code-lbl">generated code</span>
-					<button class="ae-copy" onclick={copyCode}>copy</button>
+					<span class="ae-code-lbl">generated json</span>
+					<div class="ae-code-actions">
+						<button class="ae-copy" onclick={copyCode} disabled={keyframes.length === 0}>copy</button>
+						<button class="ae-copy" onclick={downloadJson} disabled={keyframes.length === 0}>download</button>
+					</div>
 				</div>
 				<pre class="ae-code-body">{generatedCode}</pre>
 			</div>
@@ -755,7 +860,13 @@
 
 			<!-- Settings -->
 			<div class="ae-section">
-				<h4 class="ae-section-hdr">Settings</h4>
+				<div class="ae-section-hdr-row">
+					<h4 class="ae-section-hdr">Settings</h4>
+					<div class="ae-section-actions">
+						<button class="ae-btn ae-btn-save" onclick={saveAnimation} disabled={keyframes.length === 0}>save</button>
+						<button class="ae-btn" onclick={importFromJson}>load json</button>
+					</div>
+				</div>
 				<div class="ae-field">
 					<label class="ae-label" for="ae-anim-id">ID</label>
 					<input id="ae-anim-id" class="ae-input" type="text" bind:value={animId} />
@@ -772,6 +883,24 @@
 					<input id="ae-frame-count" class="ae-input" type="number" min="1" max="240" bind:value={frameCount} />
 				</div>
 			</div>
+
+			<!-- Saved animations -->
+			{#if Object.keys(savedAnimations).length > 0}
+			{@const savedList = Object.values(savedAnimations).sort((a, b) => a.id.localeCompare(b.id))}
+			<div class="ae-section">
+				<h4 class="ae-section-hdr">Saved</h4>
+				<div class="ae-preset-list">
+					{#each savedList as entry}
+						<div class="ae-saved-row">
+							<button class="ae-preset ae-saved-load" onclick={() => loadSaved(entry.id)}>
+								{entry.id}
+							</button>
+							<button class="ae-btn ae-btn-danger ae-saved-del" onclick={() => deleteSaved(entry.id)}>del</button>
+						</div>
+					{/each}
+				</div>
+			</div>
+			{/if}
 
 			<!-- Presets -->
 			<div class="ae-section ae-section-presets">
@@ -1022,6 +1151,11 @@
 		letter-spacing: 0.08em;
 	}
 
+	.ae-code-actions {
+		display: flex;
+		gap: 0.3rem;
+	}
+
 	.ae-copy {
 		background: none;
 		border: 1px solid #1e1e1e;
@@ -1033,7 +1167,8 @@
 		cursor: crosshair;
 		transition: border-color 0.15s, color 0.15s;
 	}
-	.ae-copy:hover { border-color: #383838; color: #999; }
+	.ae-copy:hover:not(:disabled) { border-color: #383838; color: #999; }
+	.ae-copy:disabled { opacity: 0.25; cursor: default; }
 
 	.ae-code-body {
 		flex: 1;
@@ -1175,4 +1310,48 @@
 		transition: border-color 0.12s, color 0.12s;
 	}
 	.ae-preset:hover { border-color: #2e2e2e; color: #aaa; }
+
+	/* ── Save / Saved list ── */
+
+	.ae-section-hdr-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.6rem;
+	}
+	.ae-section-hdr-row .ae-section-hdr { margin-bottom: 0; }
+
+	.ae-section-actions {
+		display: flex;
+		gap: 0.3rem;
+	}
+
+	.ae-btn-save {
+		color: hsl(190, 55%, 42%);
+		border-color: hsl(190, 40%, 18%);
+	}
+	.ae-btn-save:hover:not(:disabled) {
+		border-color: hsl(190, 50%, 28%);
+		color: hsl(190, 70%, 62%);
+	}
+
+	.ae-saved-row {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.ae-saved-load {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ae-saved-del {
+		flex-shrink: 0;
+		padding: 0.22rem 0.4rem;
+		font-size: 0.62rem;
+	}
 </style>
