@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { StickmenStage, Behaviours, WanderBehavior, type StickmanHandle, type BehaviorHandle } from '$lib/index.js';
+	import { base } from '$app/paths';
 
 
 	// ── Stage refs ───────────────────────────────────────────────────
@@ -442,7 +443,7 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		<div class="customize-card">
 			<h3>Customize Animations &amp; Hats</h3>
 			<p>Stickmen ship with built-in animations and hats, but you can author your own. Use the visual editors to design custom keyframe animations or compose hat accessories from shape primitives, then copy the generated JSON into your project.</p>
-			<a href="/editors" class="customize-link">Open Editors &rarr;</a>
+			<a href="{base}/editors" class="customize-link">Open Editors &rarr;</a>
 		</div>
 	</section>
 </div>

@@ -1,13 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/stores';
+	import { base } from '$app/paths';
 
 	let { children }: { children: Snippet } = $props();
 </script>
 
 <nav>
-	<a href="/" class:active={$page.url.pathname === '/'}>stickmen</a>
-	<a href="/editors" class:active={$page.url.pathname.startsWith('/editors')}>editors</a>
+	<a href="{base}/" class:active={$page.url.pathname === `${base}/`}>stickmen</a>
+	<a href="{base}/editors" class:active={$page.url.pathname.startsWith(`${base}/editors`)}>editors</a>
 </nav>
 
 {@render children()}
