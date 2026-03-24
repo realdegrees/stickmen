@@ -2,8 +2,13 @@
 	import { onMount } from 'svelte';
 	import { DefaultHatDefs, createHat, mirrorHatShape } from '$lib/index.js';
 	import type { HatShape, HatLayerDef } from '$lib/index.js';
-	import { createHistory } from '$lib/history.js';
-	import JsonModal from './JsonModal.svelte';
+	import { createHistory } from './shared/history.js';
+	import { createUndoRedoHandler } from './shared/keyboard.js';
+	import { setupHiDpiCanvas, clearCanvas, drawGrid } from './shared/canvas-utils.js';
+	import JsonModal from './shared/JsonModal.svelte';
+	import CodeOutput from './shared/CodeOutput.svelte';
+	import SaveManager from './shared/SaveManager.svelte';
+	import PresetList from './shared/PresetList.svelte';
 
 	// ── Canvas constants ───────────────────────────────────────────────
 	const CW = 200, CH = 200;
@@ -63,13 +68,7 @@
 	function doRedo() { history.redo(); syncHistory(); }
 	function syncHistory() { canUndo = history.canUndo(); canRedo = history.canRedo(); }
 
-	function onKeyDown(e: KeyboardEvent) {
-		if (document.activeElement instanceof HTMLInputElement) return;
-		const mod = e.ctrlKey || e.metaKey;
-		if (!mod) return;
-		if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
-		if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); doRedo(); }
-	}
+	const onKeyDown = createUndoRedoHandler(doUndo, doRedo);
 
 	// Drag state — discriminated union; plain var (no reactivity needed)
 	type DragState =
@@ -120,7 +119,6 @@
 	/** Position of the single group resize handle (right side of group bounding circle). */
 	function groupHandlePos() {
 		const gc = groupCenter();
-		// Radius = max reach of any selected shape from group centre
 		const maxReach = Math.max(...selectedIdxs.map(i => {
 			const c = centerOf(shapes[i]);
 			return Math.hypot(c.x - gc.x, c.y - gc.y) + shapes[i].size * HR + 7;
@@ -132,7 +130,6 @@
 
 	function hitTest(mx: number, my: number, skip: number[] = []): { type: 'shape' | 'handle'; idx: number } | null {
 		if (selectedIdxs.length > 1) {
-			// Multi-select mode: test group handle (idx=-1) then any shape body
 			const gh = groupHandlePos();
 			if (Math.hypot(mx - gh.x, my - gh.y) < 9) return { type: 'handle', idx: -1 };
 			for (let i = shapes.length - 1; i >= 0; i--) {
@@ -143,7 +140,6 @@
 			}
 			return null;
 		}
-		// Single-select mode: handles take priority, check top-most first
 		for (let i = shapes.length - 1; i >= 0; i--) {
 			if (skip.includes(i)) continue;
 			const h = handleOf(shapes[i]);
@@ -168,13 +164,10 @@
 		const ctrl = e.ctrlKey || e.metaKey;
 
 		if (ctrl) {
-			// Pass 1: hit-test skipping already-selected shapes to reach what's underneath
 			const hitUnder = hitTest(mx, my, selectedIdxs);
 			if (hitUnder && hitUnder.idx >= 0) {
-				// Found an unselected shape underneath — add it
 				selectedIdxs = [...selectedIdxs, hitUnder.idx];
 			} else {
-				// Pass 2: fall back to normal hit-test — toggle a selected shape out, or start marquee
 				const hitAny = hitTest(mx, my);
 				if (hitAny && hitAny.idx >= 0 && selectedIdxs.includes(hitAny.idx)) {
 					selectedIdxs = selectedIdxs.filter(i => i !== hitAny.idx);
@@ -189,16 +182,13 @@
 		const hit = hitTest(mx, my);
 
 		if (!hit) {
-			// Start a marquee drag-select on empty canvas space
 			marquee = { x0: mx, y0: my, x1: mx, y1: my, additive: false };
 			return;
 		}
 
-		// ── Non-ctrl hit: decide drag kind ────────────────────────────
 		const isMulti = selectedIdxs.length > 1;
 
 		if (isMulti && hit.idx === -1) {
-			// Group handle hit → multi-resize
 			snap();
 			const gh = groupHandlePos();
 			const { gc } = gh;
@@ -219,7 +209,6 @@
 			e.preventDefault();
 
 		} else if (isMulti && selectedIdxs.includes(hit.idx)) {
-			// Body of an already-selected shape → multi-move
 			snap();
 			dragging = {
 				kind: 'multi-move',
@@ -231,7 +220,6 @@
 			e.preventDefault();
 
 		} else {
-			// Single-shape drag (or clicking a non-selected shape collapses selection)
 			snap();
 			selectedIdxs = [hit.idx];
 			const s = shapes[hit.idx];
@@ -259,7 +247,6 @@
 	}
 
 	function onWindowMouseMove(e: MouseEvent) {
-		// Update marquee bounds (checked before shape-drag guard)
 		if (marquee) {
 			const rect = canvas.getBoundingClientRect();
 			marquee = { ...marquee,
@@ -270,7 +257,6 @@
 		}
 
 		if (!dragging) {
-			// Cursor hint
 			if (canvas) {
 				const rect = canvas.getBoundingClientRect();
 				const mx = e.clientX - rect.left;
@@ -301,7 +287,6 @@
 					: s
 				);
 			} else {
-				// Resize + rotate — offset-corrected so no snap on grab
 				const ddx = mx - d.centerX;
 				const ddy = my - d.centerY;
 				const rawSize  = Math.max(0.05, Math.hypot(ddx, ddy) / HR + d.sizeOffset);
@@ -329,7 +314,6 @@
 			});
 
 		} else {
-			// multi-resize: scale + rotate all shapes around group centre
 			const newDist  = Math.hypot(mx - d.groupCX, my - d.groupCY);
 			const newAngle = Math.atan2(my - d.groupCY, mx - d.groupCX) * 180 / Math.PI;
 			const scale    = d.grabDist > 0 ? Math.max(0.05, newDist / d.grabDist) : 1;
@@ -342,7 +326,6 @@
 				const si = d.idxs.indexOf(i);
 				if (si < 0) return s;
 				const ss = d.startShapes[si];
-				// Rotate & scale canvas-space position from group centre
 				const relX = ss.cx - d.groupCX;
 				const relY = ss.cy - d.groupCY;
 				const newCX = d.groupCX + (relX * cos - relY * sin) * scale;
@@ -371,10 +354,8 @@
 			const tiny   = (right - left) < 4 && (bottom - top) < 4;
 
 			if (tiny) {
-				// Treat as a plain click on empty space
 				if (!m.additive) selectedIdxs = [];
 			} else {
-				// Select all shapes whose canvas-space centre falls inside the rect
 				const hits = shapes
 					.map((s, i) => ({ i, c: centerOf(s) }))
 					.filter(({ c }) => c.x >= left && c.x <= right && c.y >= top && c.y <= bottom)
@@ -399,7 +380,6 @@
 		snap();
 		shapes  = shapes.filter((_, i)  => i !== idx);
 		mirrors = mirrors.filter((_, i) => i !== idx);
-		// Remove the deleted index, shift down any indices above it
 		selectedIdxs = selectedIdxs
 			.filter(i => i !== idx)
 			.map(i => i > idx ? i - 1 : i);
@@ -489,6 +469,11 @@
 
 	// ── Presets ────────────────────────────────────────────────────────
 
+	const presetItems = Object.keys(DefaultHatDefs).map(key => ({
+		key,
+		label: DefaultHatDefs[key].label
+	}));
+
 	function loadPreset(key: string) {
 		snap();
 		const def = DefaultHatDefs[key];
@@ -534,36 +519,20 @@
 			: JSON.stringify({ id: hatId, label: hatLabel, shapes: expandedShapes() }, null, 2)
 	);
 
-	async function copyCode() { await navigator.clipboard.writeText(generatedCode); }
+	// ── Derived data for SaveManager ──────────────────────────────────
 
-	function downloadJson() {
-		if (shapes.length === 0) return;
-		const blob = new Blob([generatedCode], { type: 'application/json' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url; a.download = `${hatId}.json`; a.click();
-		URL.revokeObjectURL(url);
-	}
+	let savedList = $derived(
+		Object.values(savedHats)
+			.sort((a, b) => a.id.localeCompare(b.id))
+			.map(e => ({ id: e.id, label: e.label }))
+	);
 
 	// ── Canvas rendering ────────────────────────────────────────────────
 
-	function setupCanvas() {
-		const dpr = window.devicePixelRatio || 1;
-		canvas.width = CW * dpr; canvas.height = CH * dpr;
-		canvas.style.width = `${CW}px`; canvas.style.height = `${CH}px`;
-	}
-
 	function render() {
 		if (!canvas) return;
-		const ctx = canvas.getContext('2d')!;
-		const dpr = window.devicePixelRatio || 1;
-		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		ctx.clearRect(0, 0, CW, CH);
-
-		// Grid
-		ctx.strokeStyle = '#181818'; ctx.lineWidth = 1;
-		for (let x = 0; x <= CW; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CH); ctx.stroke(); }
-		for (let y = 0; y <= CH; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CW, y); ctx.stroke(); }
+		const ctx = clearCanvas(canvas, CW, CH);
+		drawGrid(ctx, CW, CH);
 
 		// Head-level guide
 		ctx.strokeStyle = '#1c1c1c'; ctx.setLineDash([2, 5]);
@@ -581,7 +550,7 @@
 		ctx.moveTo(HX, HY + HR); ctx.lineTo(HX, HY + HR + NECK_LEN);
 		ctx.stroke();
 
-		// Head circle (drawn first — hat shapes will overdraw as intended)
+		// Head circle
 		ctx.beginPath();
 		ctx.arc(HX, HY, HR, 0, Math.PI * 2);
 		ctx.fill(); ctx.stroke();
@@ -592,7 +561,7 @@
 				.draw(ctx, HX, HY, HR, 0, color);
 		}
 
-		// Ghost mirror copies — drawn at reduced opacity, no handles
+		// Ghost mirror copies
 		const mirrorShapes = shapes.filter((_, i) => mirrors[i]).map(mirrorHatShape);
 		if (mirrorShapes.length > 0) {
 			ctx.save();
@@ -602,7 +571,7 @@
 			ctx.restore();
 		}
 
-		// Glow pass — redraw selected shapes in amber so they pop against the cyan base
+		// Glow pass — redraw selected shapes in amber
 		if (selectedIdxs.length > 0) {
 			const selShapes = selectedIdxs.map(i => shapes[i]).filter(Boolean) as HatShape[];
 			ctx.save();
@@ -614,14 +583,11 @@
 		}
 
 		if (selectedIdxs.length > 1) {
-			// ── Group selection: one enclosing circle + one shared handle ──
 			const gh = groupHandlePos();
 			const gc = gh.gc;
 			const groupRadius = gh.x - gc.x;
 
 			ctx.save();
-
-			// Dashed group circle
 			ctx.setLineDash([3, 3]);
 			ctx.strokeStyle = 'rgba(255,255,255,0.20)';
 			ctx.lineWidth = 1;
@@ -630,16 +596,13 @@
 			ctx.stroke();
 			ctx.setLineDash([]);
 
-			// Group centre dot
 			ctx.fillStyle = 'rgba(255,255,255,0.50)';
 			ctx.beginPath(); ctx.arc(gc.x, gc.y, 2.5, 0, Math.PI * 2); ctx.fill();
 
-			// Connector line to handle
 			ctx.strokeStyle = 'rgba(255,255,255,0.15)';
 			ctx.lineWidth = 1;
 			ctx.beginPath(); ctx.moveTo(gc.x, gc.y); ctx.lineTo(gh.x, gh.y); ctx.stroke();
 
-			// Single resize handle
 			ctx.strokeStyle = 'rgba(255,255,255,0.55)';
 			ctx.fillStyle   = '#111';
 			ctx.lineWidth   = 1;
@@ -648,7 +611,6 @@
 			ctx.restore();
 
 		} else {
-			// ── Single selection: per-shape ring + handle ──
 			for (const si of selectedIdxs) {
 				if (!shapes[si]) continue;
 				const s = shapes[si];
@@ -679,7 +641,7 @@
 			}
 		}
 
-		// Marquee drag-select rectangle (drawn last — always on top)
+		// Marquee
 		if (marquee) {
 			const rx = Math.min(marquee.x0, marquee.x1);
 			const ry = Math.min(marquee.y0, marquee.y1);
@@ -699,7 +661,7 @@
 
 	onMount(() => {
 		loadSavedFromStorage();
-		setupCanvas();
+		setupHiDpiCanvas(canvas, CW, CH);
 		render();
 		return () => {};
 	});
@@ -787,16 +749,7 @@
 			</div>
 
 			<!-- Code -->
-			<div class="hb-code">
-				<div class="hb-code-hdr">
-					<span class="hb-micro-lbl">generated json</span>
-					<div class="hb-code-actions">
-						<button class="hb-copy" onclick={copyCode} disabled={shapes.length === 0}>copy</button>
-						<button class="hb-copy" onclick={downloadJson} disabled={shapes.length === 0}>download</button>
-					</div>
-				</div>
-				<pre class="hb-code-body">{generatedCode}</pre>
-			</div>
+			<CodeOutput code={generatedCode} isEmpty={shapes.length === 0} filename="{hatId}.json" />
 		</div>
 
 		<!-- ── RIGHT: params + settings + presets ───────────────────── -->
@@ -866,7 +819,7 @@
 						</label>
 					{/if}
 
-					<!-- Thickness — all shapes -->
+					<!-- Thickness -->
 					<label class="hb-field">
 						<span class="hb-label">width</span>
 						<input class="hb-slider" type="range" min="1" max="10" step="0.5"
@@ -891,7 +844,7 @@
 				</div>
 				{/if}
 			{:else}
-				<!-- Multi-select panel — shared controls only -->
+				<!-- Multi-select panel -->
 				{@const ref = shapes[selectedIdxs[0]]}
 				{@const allFillable = selectedIdxs.every(i => { const t = shapes[i]?.type; return t === 'circle' || t === 'arc' || t === 'rect' || t === 'triangle'; })}
 				{@const sharedType = selectedIdxs.every(i => shapes[i]?.type === ref?.type) ? ref?.type : null}
@@ -899,7 +852,6 @@
 				<div class="hb-section">
 					<h4 class="hb-section-hdr">{selectedIdxs.length} shapes</h4>
 
-					<!-- Fill — only if every selected shape supports it -->
 					{#if allFillable}
 						{@const allFilled = selectedIdxs.every(i => (shapes[i] as {fill?: boolean}).fill ?? false)}
 						<label class="hb-field">
@@ -909,7 +861,6 @@
 						</label>
 					{/if}
 
-					<!-- Arc: span — only if all are arcs -->
 					{#if sharedType === 'arc'}
 						{@const sp = (ref as {span?: number}).span ?? 180}
 						<label class="hb-field">
@@ -923,7 +874,6 @@
 						</label>
 					{/if}
 
-					<!-- Rect: aspect — only if all are rects -->
 					{#if sharedType === 'rect'}
 						{@const asp = (ref as {aspect?: number}).aspect ?? 1}
 						<label class="hb-field">
@@ -937,7 +887,6 @@
 						</label>
 					{/if}
 
-					<!-- Curve: curvature — only if all are curves -->
 					{#if sharedType === 'curve'}
 						{@const bow = (ref as {curvature?: number}).curvature ?? 0.5}
 						<label class="hb-field">
@@ -951,7 +900,6 @@
 						</label>
 					{/if}
 
-					<!-- Thickness — always shared -->
 					<label class="hb-field">
 						<span class="hb-label">width</span>
 						<input class="hb-slider" type="range" min="1" max="10" step="0.5"
@@ -965,15 +913,16 @@
 				{/if}
 			{/if}
 
-			<!-- Settings -->
-			<div class="hb-section">
-				<div class="hb-section-hdr-row">
-					<h4 class="hb-section-hdr">Settings</h4>
-					<div class="hb-section-actions">
-						<button class="hb-btn hb-btn-save" onclick={saveHat} disabled={shapes.length === 0}>save</button>
-						<button class="hb-btn" onclick={importFromJson}>load json</button>
-					</div>
-				</div>
+			<!-- Settings + Saved -->
+			<SaveManager
+				itemId={hatId}
+				saveDisabled={shapes.length === 0}
+				{savedList}
+				onsave={saveHat}
+				onload={loadSaved}
+				ondelete={deleteSaved}
+				onimport={importFromJson}
+			>
 				<div class="hb-field hb-field-vert">
 					<label class="hb-label" for="hb-id">ID</label>
 					<input id="hb-id" class="hb-input" type="text" bind:value={hatId} />
@@ -982,37 +931,10 @@
 					<label class="hb-label" for="hb-lbl-in">Label</label>
 					<input id="hb-lbl-in" class="hb-input" type="text" bind:value={hatLabel} />
 				</div>
-			</div>
-
-			<!-- Saved hats -->
-			{#if Object.keys(savedHats).length > 0}
-			{@const savedList = Object.values(savedHats).sort((a, b) => a.id.localeCompare(b.id))}
-			<div class="hb-section">
-				<h4 class="hb-section-hdr">Saved</h4>
-				<div class="hb-preset-list">
-					{#each savedList as entry}
-						<div class="hb-saved-row">
-							<button class="hb-preset hb-saved-load" onclick={() => loadSaved(entry.id)}>
-								{entry.label || entry.id}
-							</button>
-							<button class="hb-btn hb-btn-danger hb-saved-del" onclick={() => deleteSaved(entry.id)}>del</button>
-						</div>
-					{/each}
-				</div>
-			</div>
-			{/if}
+			</SaveManager>
 
 			<!-- Presets -->
-			<div class="hb-section">
-				<h4 class="hb-section-hdr">Presets</h4>
-				<div class="hb-preset-list">
-					{#each Object.keys(DefaultHatDefs) as key}
-						<button class="hb-preset" onclick={() => loadPreset(key)}>
-							{DefaultHatDefs[key].label}
-						</button>
-					{/each}
-				</div>
-			</div>
+			<PresetList presets={presetItems} onload={loadPreset} />
 		</div>
 	</div>
 </div>
@@ -1033,8 +955,6 @@
 		grid-template-columns: 1fr 220px;
 		min-height: 460px;
 	}
-
-	/* ── Left column ── */
 
 	.hb-left {
 		display: flex;
@@ -1057,8 +977,6 @@
 		border-radius: 3px;
 		border: 1px solid #1c1c1c;
 	}
-
-	/* ── Shape list bar ── */
 
 	.hb-shapes-bar {
 		display: flex;
@@ -1145,56 +1063,6 @@
 		color: #2a2a2a;
 	}
 
-	/* ── Code ── */
-
-	.hb-code {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		min-height: 80px;
-	}
-
-	.hb-code-hdr {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.3rem 0.75rem;
-		border-top: 1px solid #181818;
-		flex-shrink: 0;
-	}
-
-	.hb-code-actions {
-		display: flex;
-		gap: 0.3rem;
-	}
-
-	.hb-copy {
-		background: none;
-		border: 1px solid #1e1e1e;
-		color: #484848;
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 0.62rem;
-		padding: 0.1rem 0.4rem;
-		border-radius: 3px;
-		cursor: crosshair;
-		transition: border-color 0.15s, color 0.15s;
-	}
-	.hb-copy:hover:not(:disabled) { border-color: #383838; color: #999; }
-	.hb-copy:disabled { opacity: 0.25; cursor: default; }
-
-	.hb-code-body {
-		flex: 1;
-		margin: 0;
-		padding: 0.5rem 0.75rem;
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 0.62rem;
-		color: #555;
-		line-height: 1.6;
-		white-space: pre;
-		overflow: auto;
-	}
-
 	/* ── Right column ── */
 
 	.hb-right {
@@ -1238,8 +1106,6 @@
 		font-size: 0.58rem;
 		color: #222;
 	}
-
-	/* ── Fields ── */
 
 	.hb-field {
 		display: flex;
@@ -1326,71 +1192,4 @@
 		box-sizing: border-box;
 	}
 	.hb-input:focus { outline: none; border-color: hsl(190,45%,23%); }
-
-	.hb-preset-list {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.hb-preset {
-		background: none;
-		border: 1px solid #181818;
-		color: #555;
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 0.68rem;
-		padding: 0.26rem 0.5rem;
-		text-align: left;
-		cursor: crosshair;
-		border-radius: 3px;
-		transition: border-color 0.1s, color 0.1s;
-	}
-	.hb-preset:hover { border-color: #2c2c2c; color: #aaa; }
-
-	/* ── Save / Saved list ── */
-
-	.hb-section-hdr-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 0.55rem;
-	}
-	.hb-section-hdr-row .hb-section-hdr { margin-bottom: 0; }
-
-	.hb-section-actions {
-		display: flex;
-		gap: 0.3rem;
-	}
-
-	.hb-btn-save {
-		color: hsl(190, 55%, 42%);
-		border-color: hsl(190, 40%, 18%);
-	}
-	.hb-btn-save:hover:not(:disabled) {
-		border-color: hsl(190, 50%, 28%);
-		color: hsl(190, 70%, 62%);
-	}
-
-	.hb-btn-danger { color: #555; }
-	.hb-btn-danger:hover:not(:disabled) { border-color: hsl(0,40%,28%); color: hsl(0,58%,52%); }
-
-	.hb-saved-row {
-		display: flex;
-		align-items: center;
-		gap: 3px;
-	}
-
-	.hb-saved-load {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.hb-saved-del {
-		flex-shrink: 0;
-		padding: 0.18rem 0.38rem;
-		font-size: 0.62rem;
-	}
 </style>

@@ -7,6 +7,7 @@
 
 <nav>
 	<a href="/" class:active={$page.url.pathname === '/'}>stickmen</a>
+	<a href="/editors" class:active={$page.url.pathname.startsWith('/editors')}>editors</a>
 </nav>
 
 {@render children()}

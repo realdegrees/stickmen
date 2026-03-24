@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { StickmenStage, Behaviours, WanderBehavior, type StickmanHandle, type BehaviorHandle } from '$lib/index.js';
-	import AnimationEditor from './AnimationEditor.svelte';
-	import HatBuilder from './HatBuilder.svelte';
+
 
 	// ── Stage refs ───────────────────────────────────────────────────
 	let walkStage: ReturnType<typeof StickmenStage>;
@@ -437,18 +436,14 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		</StickmenStage>
 	</section>
 
-	<!-- ── Animation Editor ──────────────────────────────────────── -->
+	<!-- ── Customization ────────────────────────────────────────── -->
 
-	<section id="animation-editor" class="editor-section">
-		<h2 class="editor-heading">Animation Editor</h2>
-		<p class="editor-sub">Author keyframe animations and copy the generated code.</p>
-		<AnimationEditor />
-	</section>
-
-	<section id="hat-builder" class="editor-section">
-		<h2 class="editor-heading">Hat Builder</h2>
-		<p class="editor-sub">Compose custom hat accessories from shape primitives and copy the generated code.</p>
-		<HatBuilder />
+	<section class="customize-section">
+		<div class="customize-card">
+			<h3>Customize Animations &amp; Hats</h3>
+			<p>Stickmen ship with built-in animations and hats, but you can author your own. Use the visual editors to design custom keyframe animations or compose hat accessories from shape primitives, then copy the generated JSON into your project.</p>
+			<a href="/editors" class="customize-link">Open Editors &rarr;</a>
+		</div>
 	</section>
 </div>
 
@@ -823,23 +818,48 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 
 	/* ── Animation editor section ───────────────────────────────── */
 
-	.editor-section {
+	.customize-section {
 		margin-top: 3rem;
 		margin-bottom: 2rem;
 	}
 
-	.editor-heading {
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 1.1rem;
-		font-weight: 500;
-		color: #ccc;
-		margin: 0 0 0.35rem;
+	.customize-card {
+		background: #0d0d0d;
+		border: 1px solid #1a1a1a;
+		border-radius: 6px;
+		padding: 1.5rem 2rem;
 	}
 
-	.editor-sub {
+	.customize-card h3 {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 1rem;
+		font-weight: 400;
+		color: #ccc;
+		margin: 0 0 0.6rem;
+	}
+
+	.customize-card p {
 		color: #555;
-		font-size: 0.85rem;
-		margin: 0 0 1.25rem;
+		font-size: 0.8rem;
+		line-height: 1.6;
+		margin: 0 0 1rem;
+	}
+
+	.customize-link {
+		display: inline-block;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.78rem;
+		color: hsl(190, 55%, 50%);
+		text-decoration: none;
+		border: 1px solid hsl(190, 40%, 20%);
+		padding: 0.4rem 1rem;
+		border-radius: 4px;
+		transition: border-color 0.15s, color 0.15s;
+	}
+
+	.customize-link:hover {
+		border-color: hsl(190, 50%, 32%);
+		color: hsl(190, 65%, 65%);
 	}
 
 	/* ── Config override demo ────────────────────────────────────── */

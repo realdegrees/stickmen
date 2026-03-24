@@ -11,7 +11,11 @@ const config = {
 			fallback: undefined,
 			precompress: false,
 			strict: true
-		})
+		}),
+		alias: {
+			$editors: 'src/editors',
+			'$editors/*': 'src/editors/*'
+		}
 	}
 };
 

@@ -5,9 +5,14 @@
 	import { BONES } from '$lib/engine/types.js';
 	import { DEFAULT_CONFIG } from '$lib/engine/config.js';
 	import type { AnimKeyframe, JointAngles, EasingType, Pose } from '$lib/index.js';
-	import { createHistory } from '$lib/history.js';
-	import JsonModal from './JsonModal.svelte';
 	import { DefaultHatDefs, createHat, mirrorHatShape, type HatDef, type HatLayerDef } from '$lib/engine/hats.js';
+	import { createHistory } from './shared/history.js';
+	import { createUndoRedoHandler } from './shared/keyboard.js';
+	import { setupHiDpiCanvas, clearCanvas, drawGrid } from './shared/canvas-utils.js';
+	import JsonModal from './shared/JsonModal.svelte';
+	import CodeOutput from './shared/CodeOutput.svelte';
+	import SaveManager from './shared/SaveManager.svelte';
+	import PresetList from './shared/PresetList.svelte';
 
 	// ── Types ─────────────────────────────────────────────────────────
 
@@ -46,12 +51,12 @@
 	let canvasCurrent: HTMLCanvasElement;
 	let canvasNext: HTMLCanvasElement;
 
-	// Independent loop RAF state (plain vars — no reactivity needed)
+	// Independent loop RAF state
 	let loopPhase = 0;
 	let loopRafId = 0;
 	let loopLastTime = 0;
 
-	// LOOP canvas reference animation ('' = show current edit)
+	// LOOP canvas reference animation
 	let loopRef = $state('');
 
 	// Hat preview state for the loop canvas
@@ -166,13 +171,7 @@
 	function doRedo() { history.redo(); syncHistory(); }
 	function syncHistory() { canUndo = history.canUndo(); canRedo = history.canRedo(); }
 
-	function onKeyDown(e: KeyboardEvent) {
-		if (document.activeElement instanceof HTMLInputElement) return;
-		const mod = e.ctrlKey || e.metaKey;
-		if (!mod) return;
-		if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
-		if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); doRedo(); }
-	}
+	const onKeyDown = createUndoRedoHandler(doUndo, doRedo);
 
 	type DragTarget =
 		| { type: 'knob'; key: string; cx: number; cy: number; angleOffset: number }
@@ -180,11 +179,9 @@
 	let dragTarget: DragTarget | null = $state(null);
 
 	// Mini canvas constants
-	// body vertical extent: legLen(11) + torso(8) + neck(2) + head(3) = 24 local units
-	// at MSCALE=3.6 → 86px; MCY shifted down 20px to give room for hat above head
 	const MW = 110, MH = 168;
 	const MCX = MW / 2;
-	const MCY = 132; // feet Y position (shifted down 20px vs original 112 for hat clearance)
+	const MCY = 132;
 	const MSCALE = 3.6;
 
 	// ── Angle helpers ─────────────────────────────────────────────────
@@ -205,8 +202,6 @@
 		}
 	}
 
-	/** Apply a display-angle to any joints object, returning updated joints.
-	 *  Composite joints (head, elbows, knees) are stored relative to their parent. */
 	function applyAngleToJoints(j: RequiredAngles, key: string, displayDeg: number): RequiredAngles {
 		const d = norm(displayDeg);
 		switch (key) {
@@ -228,7 +223,6 @@
 		angles = applyAngleToJoints(angles, key, deg);
 	}
 
-	/** Apply the same display angle to all secondary selected keyframes for one joint. */
 	function propagateKnobToSecondary(key: string, displayDeg: number) {
 		if (selectedKfIdxs.length <= 1 || selectedKfIdx === null) return;
 		keyframes = keyframes.map((kf, i) => {
@@ -238,7 +232,6 @@
 		});
 	}
 
-	/** Apply the same offset to all secondary selected keyframes. */
 	function propagateOffsetToSecondary(ox: number, oy: number) {
 		if (selectedKfIdxs.length <= 1 || selectedKfIdx === null) return;
 		keyframes = keyframes.map((kf, i) => {
@@ -251,11 +244,10 @@
 
 	function onKnobMouseDown(e: MouseEvent, key: string) {
 		e.preventDefault();
-		snap(); // snapshot before drag auto-upserts keyframes
+		snap();
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		const cx = rect.left + rect.width / 2;
 		const cy = rect.top + rect.height / 2;
-		// Compute grab offset so the knob doesn't snap on first drag frame
 		const grabAngle = Math.atan2(e.clientX - cx, e.clientY - cy) * 180 / Math.PI;
 		const angleOffset = displayAngle(key) - grabAngle;
 		dragTarget = { type: 'knob', key, cx, cy, angleOffset };
@@ -265,7 +257,6 @@
 		e.preventDefault();
 		snap();
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		// Compute where the dot currently is in client-space so we can grab without snapping
 		const dotClientX = rect.left + rect.width  * (0.5 + offsetX / 20);
 		const dotClientY = rect.top  + rect.height * (0.5 - offsetY / 20);
 		dragTarget = { type: 'offset', rect, grabOffsetX: e.clientX - dotClientX, grabOffsetY: e.clientY - dotClientY };
@@ -308,14 +299,11 @@
 		if (existing >= 0) {
 			keyframes = keyframes.map((k, i) => i === existing ? kf : k);
 			selectedKfIdx = existing;
-			// Ensure primary is in the multi-select
 			if (!selectedKfIdxs.includes(existing)) selectedKfIdxs = [existing, ...selectedKfIdxs];
 		} else {
-			// Save selected timestamps before sort changes indices
 			const selectedTs = selectedKfIdxs.map(i => keyframes[i]?.t).filter(t => t !== undefined) as number[];
 			keyframes = [...keyframes, kf].sort((a, b) => a.t - b.t);
 			selectedKfIdx = keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.01);
-			// Re-find previously selected keyframes by their t values
 			const reFound = selectedTs
 				.map(t => keyframes.findIndex(k => Math.abs(k.t - t) < 0.01))
 				.filter(i => i >= 0);
@@ -325,7 +313,6 @@
 		}
 	}
 
-	/** Called by the + keyframe button — snapshots first. Drag auto-upsert skips this. */
 	function addKeyframeManual() { snap(); upsertCurrentPose(); }
 
 	function deleteKeyframe() {
@@ -354,9 +341,12 @@
 
 	// ── Presets ───────────────────────────────────────────────────────
 
-	function loadPreset(key: keyof typeof DefaultAnimations) {
+	const presetItems = Object.keys(DefaultAnimations).map(key => ({ key, label: key }));
+
+	function loadPreset(key: string) {
 		snap();
-		const def = DefaultAnimations[key];
+		const def = DefaultAnimations[key as keyof typeof DefaultAnimations];
+		if (!def) return;
 		animId = def.id; animType = def.type; frameCount = def.frameCount;
 		keyframes = def.keyframes.map(kf => ({
 			...kf,
@@ -396,32 +386,21 @@
 			: JSON.stringify({ id: animId, type: animType, frameCount, keyframes: keyframes.map(cleanKf) }, null, 2)
 	);
 
-	async function copyCode() { await navigator.clipboard.writeText(generatedCode); }
+	// ── Derived data for SaveManager ──────────────────────────────────
 
-	function downloadJson() {
-		if (keyframes.length === 0) return;
-		const blob = new Blob([generatedCode], { type: 'application/json' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url; a.download = `${animId}.json`; a.click();
-		URL.revokeObjectURL(url);
-	}
+	let savedList = $derived(
+		Object.values(savedAnimations)
+			.sort((a, b) => a.id.localeCompare(b.id))
+			.map(e => ({ id: e.id }))
+	);
 
 	// ── Canvas rendering ──────────────────────────────────────────────
-
-	function setupCanvas(c: HTMLCanvasElement) {
-		const dpr = window.devicePixelRatio || 1;
-		c.width = MW * dpr; c.height = MH * dpr;
-		c.style.width = `${MW}px`; c.style.height = `${MH}px`;
-	}
 
 	function bgMini(ctx: CanvasRenderingContext2D) {
 		const dpr = window.devicePixelRatio || 1;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, MW, MH);
-		ctx.strokeStyle = '#181818'; ctx.lineWidth = 1;
-		for (let x = 0; x <= MW; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MH); ctx.stroke(); }
-		for (let y = 0; y <= MH; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MW, y); ctx.stroke(); }
+		drawGrid(ctx, MW, MH);
 		ctx.strokeStyle = '#252525'; ctx.setLineDash([3, 3]);
 		ctx.beginPath(); ctx.moveTo(0, MCY); ctx.lineTo(MW, MCY); ctx.stroke();
 		ctx.setLineDash([]);
@@ -475,7 +454,6 @@
 		return keyframes[keyframes.length - 1];
 	}
 
-	/** Returns the index of the prev/next keyframe for click-to-select. */
 	function getPrevKfIdx(): number | null {
 		if (!keyframes.length) return null;
 		let bestIdx = 0;
@@ -493,7 +471,6 @@
 		return keyframes.length - 1;
 	}
 
-	// Renders the LOOP canvas only (called by independent RAF)
 	function renderLoopCanvas() {
 		if (!canvasLoop) return;
 		const ctx = canvasLoop.getContext('2d')!;
@@ -510,11 +487,9 @@
 		}
 	}
 
-	// Renders prev, current, next canvases (called reactively)
 	function renderThree() {
 		if (!canvasPrev || !canvasCurrent || !canvasNext) return;
 
-		// PREV KF — orange tint
 		{
 			const ctx = canvasPrev.getContext('2d')!;
 			bgMini(ctx);
@@ -527,14 +502,12 @@
 			}
 		}
 
-		// CURRENT — cyan (full brightness)
 		{
 			const ctx = canvasCurrent.getContext('2d')!;
 			bgMini(ctx);
 			drawFig(ctx, poseFrom(angles, offsetX, offsetY));
 		}
 
-		// NEXT KF — blue tint
 		{
 			const ctx = canvasNext.getContext('2d')!;
 			bgMini(ctx);
@@ -593,7 +566,6 @@
 	onMount(() => {
 		loadSavedFromStorage();
 
-		// Build combined hat list: null (no hat) + defaults + saved local hats
 		const defaults = Object.values(DefaultHatDefs).map(createHat);
 		let savedHats: HatDef[] = [];
 		try {
@@ -601,7 +573,6 @@
 			if (raw) {
 				const obj: Record<string, HatLayerDef & { mirrors?: boolean[] }> = JSON.parse(raw);
 				savedHats = Object.values(obj).map(def => {
-					// Bake any mirror flags into the shape list before creating the live hat
 					const resolved = def.shapes.flatMap((s, i) =>
 						def.mirrors?.[i] ? [s, mirrorHatShape(s)] : [s]
 					);
@@ -610,17 +581,15 @@
 			}
 		} catch { /* ignore */ }
 		allHats = [null, ...defaults, ...savedHats];
-		// Start on a random hat (not null)
 		hatIndex = Math.floor(Math.random() * (allHats.length - 1)) + 1;
 
-		[canvasLoop, canvasPrev, canvasCurrent, canvasNext].forEach(setupCanvas);
+		[canvasLoop, canvasPrev, canvasCurrent, canvasNext].forEach(c => setupHiDpiCanvas(c, MW, MH));
 		renderThree();
 		renderLoopCanvas();
 		startLoopRaf();
 		return () => { stopPlayback(); cancelAnimationFrame(loopRafId); };
 	});
 
-	// Sync knobs from timeline position when not dragging
 	$effect(() => {
 		const t = scrubTime;
 		const kfs = keyframes;
@@ -633,7 +602,6 @@
 		}
 	});
 
-	// Re-render prev/current/next whenever relevant state changes
 	$effect(() => {
 		angles; offsetX; offsetY; keyframes; scrubTime;
 		renderThree();
@@ -714,7 +682,6 @@
 		<!-- ── LEFT: preview + controls + code ──────────────────────── -->
 		<div class="ae-left">
 
-		<!-- facing hint -->
 		<div class="ae-facing-hint">
 			<svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
 				<polygon points="2,1 9,5 2,9"/>
@@ -722,9 +689,7 @@
 			poses are right-facing · auto-flipped when moving left
 		</div>
 
-		<!-- 4-figure preview row -->
 		<div class="ae-preview">
-			<!-- LOOP: always playing; select picks reference animation -->
 			<div class="ae-fig">
 				<div class="ae-loop-wrap">
 					<canvas bind:this={canvasLoop}></canvas>
@@ -739,7 +704,6 @@
 					{/each}
 				</select>
 			</div>
-				<!-- PREV KF: click to select that keyframe -->
 				<div
 					class="ae-fig ae-fig-dim"
 					class:ae-fig-selectable={keyframes.length > 0}
@@ -752,12 +716,10 @@
 					<canvas bind:this={canvasPrev}></canvas>
 					<span class="ae-fig-lbl" style="color: hsl(38,60%,40%)">PREV KF</span>
 				</div>
-				<!-- CURRENT: live pose -->
 				<div class="ae-fig ae-fig-active">
 					<canvas bind:this={canvasCurrent}></canvas>
 					<span class="ae-fig-lbl" style="color: hsl(190,60%,45%)">CURRENT</span>
 				</div>
-				<!-- NEXT KF: click to select that keyframe -->
 				<div
 					class="ae-fig ae-fig-dim"
 					class:ae-fig-selectable={keyframes.length > 0}
@@ -772,7 +734,6 @@
 				</div>
 			</div>
 
-			<!-- Playback controls -->
 			<div class="ae-playback">
 				<button class="ae-play" onclick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
 					{#if playing}
@@ -798,7 +759,6 @@
 				</select>
 			</div>
 
-			<!-- Timeline -->
 			<div class="ae-tl-wrap">
 				<div
 					class="ae-tl"
@@ -826,7 +786,6 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							if (e.ctrlKey || e.metaKey) {
-								// Toggle in multi-select without loading pose
 								if (selectedKfIdxs.includes(i)) {
 									selectedKfIdxs = selectedKfIdxs.filter(x => x !== i);
 								} else {
@@ -865,27 +824,16 @@
 			</div>
 
 			<!-- Generated code -->
-			<div class="ae-code">
-				<div class="ae-code-hdr">
-					<span class="ae-code-lbl">generated json</span>
-					<div class="ae-code-actions">
-						<button class="ae-copy" onclick={copyCode} disabled={keyframes.length === 0}>copy</button>
-						<button class="ae-copy" onclick={downloadJson} disabled={keyframes.length === 0}>download</button>
-					</div>
-				</div>
-				<pre class="ae-code-body">{generatedCode}</pre>
-			</div>
+			<CodeOutput code={generatedCode} isEmpty={keyframes.length === 0} filename="{animId}.json" />
 		</div>
 
 		<!-- ── RIGHT: knobs + settings + presets ─────────────────────── -->
 		<div class="ae-right">
 
-		<!-- Multi-keyframe selection banner -->
 		{#if selectedKfIdxs.length > 1}
 			<div class="ae-multi-lbl">{selectedKfIdxs.length} keyframes selected</div>
 		{/if}
 
-		<!-- Skeleton knob grid -->
 		<div class="ae-skel">
 				<div class="ae-skel-row">
 					<div></div>
@@ -914,15 +862,16 @@
 				</div>
 			</div>
 
-			<!-- Settings -->
-			<div class="ae-section">
-				<div class="ae-section-hdr-row">
-					<h4 class="ae-section-hdr">Settings</h4>
-					<div class="ae-section-actions">
-						<button class="ae-btn ae-btn-save" onclick={saveAnimation} disabled={keyframes.length === 0}>save</button>
-						<button class="ae-btn" onclick={importFromJson}>load json</button>
-					</div>
-				</div>
+			<!-- Settings + Saved -->
+			<SaveManager
+				itemId={animId}
+				saveDisabled={keyframes.length === 0}
+				{savedList}
+				onsave={saveAnimation}
+				onload={loadSaved}
+				ondelete={deleteSaved}
+				onimport={importFromJson}
+			>
 				<div class="ae-field">
 					<label class="ae-label" for="ae-anim-id">ID</label>
 					<input id="ae-anim-id" class="ae-input" type="text" bind:value={animId} />
@@ -938,37 +887,10 @@
 					<label class="ae-label" for="ae-frame-count">Frames</label>
 					<input id="ae-frame-count" class="ae-input" type="number" min="1" max="240" bind:value={frameCount} />
 				</div>
-			</div>
-
-			<!-- Saved animations -->
-			{#if Object.keys(savedAnimations).length > 0}
-			{@const savedList = Object.values(savedAnimations).sort((a, b) => a.id.localeCompare(b.id))}
-			<div class="ae-section">
-				<h4 class="ae-section-hdr">Saved</h4>
-				<div class="ae-preset-list">
-					{#each savedList as entry}
-						<div class="ae-saved-row">
-							<button class="ae-preset ae-saved-load" onclick={() => loadSaved(entry.id)}>
-								{entry.id}
-							</button>
-							<button class="ae-btn ae-btn-danger ae-saved-del" onclick={() => deleteSaved(entry.id)}>del</button>
-						</div>
-					{/each}
-				</div>
-			</div>
-			{/if}
+			</SaveManager>
 
 			<!-- Presets -->
-			<div class="ae-section ae-section-presets">
-				<h4 class="ae-section-hdr">Presets</h4>
-				<div class="ae-preset-list">
-					{#each Object.keys(DefaultAnimations) as key}
-						<button class="ae-preset" onclick={() => loadPreset(key as keyof typeof DefaultAnimations)}>
-							{key}
-						</button>
-					{/each}
-				</div>
-			</div>
+			<PresetList presets={presetItems} onload={loadPreset} />
 		</div>
 	</div>
 </div>
@@ -992,16 +914,12 @@
 		min-height: 480px;
 	}
 
-	/* ── Left column ── */
-
 	.ae-left {
 		display: flex;
 		flex-direction: column;
 		border-right: 1px solid #1a1a1a;
 		overflow: hidden;
 	}
-
-	/* ── 4-figure preview row ── */
 
 	.ae-preview {
 		display: grid;
@@ -1025,13 +943,8 @@
 		border: 1px solid #1c1c1c;
 	}
 
-	.ae-fig.ae-fig-active canvas {
-		border-color: hsl(190, 40%, 20%);
-	}
-
-	.ae-fig.ae-fig-dim canvas {
-		opacity: 0.85;
-	}
+	.ae-fig.ae-fig-active canvas { border-color: hsl(190, 40%, 20%); }
+	.ae-fig.ae-fig-dim canvas { opacity: 0.85; }
 
 	.ae-fig-selectable {
 		cursor: pointer;
@@ -1059,8 +972,6 @@
 	.ae-loop-ref:focus { outline: none; color: #666; }
 	.ae-loop-ref option { background: #111; color: #888; }
 
-	/* ── Facing hint ── */
-
 	.ae-facing-hint {
 		display: flex;
 		align-items: center;
@@ -1073,11 +984,7 @@
 		border-bottom: 1px solid #111;
 	}
 
-	/* ── Hat cycling overlay ── */
-
-	.ae-loop-wrap {
-		position: relative;
-	}
+	.ae-loop-wrap { position: relative; }
 
 	.ae-hat-btn {
 		position: absolute;
@@ -1121,8 +1028,6 @@
 		text-transform: uppercase;
 	}
 
-	/* ── Playback ── */
-
 	.ae-playback {
 		display: flex;
 		align-items: center;
@@ -1160,8 +1065,6 @@
 		padding: 0.18rem 0.25rem;
 		border-radius: 3px;
 	}
-
-	/* ── Timeline ── */
 
 	.ae-tl-wrap {
 		padding: 0.6rem 0.75rem;
@@ -1235,74 +1138,12 @@
 	}
 	.ae-sel:focus { outline: none; border-color: hsl(190, 50%, 28%); }
 
-	/* ── Code output ── */
-
-	.ae-code {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		border-top: none;
-		min-height: 120px;
-	}
-
-	.ae-code-hdr {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.35rem 0.75rem;
-		border-top: 1px solid #181818;
-		flex-shrink: 0;
-	}
-
-	.ae-code-lbl {
-		font-size: 0.6rem;
-		color: #383838;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-	}
-
-	.ae-code-actions {
-		display: flex;
-		gap: 0.3rem;
-	}
-
-	.ae-copy {
-		background: none;
-		border: 1px solid #1e1e1e;
-		color: #484848;
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 0.62rem;
-		padding: 0.12rem 0.45rem;
-		border-radius: 3px;
-		cursor: crosshair;
-		transition: border-color 0.15s, color 0.15s;
-	}
-	.ae-copy:hover:not(:disabled) { border-color: #383838; color: #999; }
-	.ae-copy:disabled { opacity: 0.25; cursor: default; }
-
-	.ae-code-body {
-		flex: 1;
-		margin: 0;
-		padding: 0.6rem 0.75rem;
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 0.65rem;
-		color: #555;
-		line-height: 1.65;
-		white-space: pre;
-		overflow: auto;
-	}
-
-	/* ── Right column ── */
-
 	.ae-right {
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
 		background: #0c0c0c;
 	}
-
-	/* ── Skeleton knobs ── */
 
 	.ae-skel {
 		padding: 0.75rem 0.6rem 0.5rem;
@@ -1360,22 +1201,6 @@
 		min-width: 30px;
 	}
 
-	/* ── Settings + Presets sections ── */
-
-	.ae-section {
-		padding: 0.65rem 0.75rem;
-		border-bottom: 1px solid #181818;
-	}
-
-	.ae-section-hdr {
-		font-size: 0.58rem;
-		font-weight: 500;
-		color: #383838;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		margin: 0 0 0.6rem;
-	}
-
 	.ae-field {
 		display: flex;
 		align-items: center;
@@ -1401,68 +1226,4 @@
 		min-width: 0;
 	}
 	.ae-input:focus { outline: none; border-color: hsl(190, 45%, 25%); }
-
-	.ae-preset-list {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.ae-preset {
-		background: none;
-		border: 1px solid #181818;
-		color: #555;
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 0.68rem;
-		padding: 0.28rem 0.5rem;
-		text-align: left;
-		cursor: crosshair;
-		border-radius: 3px;
-		transition: border-color 0.12s, color 0.12s;
-	}
-	.ae-preset:hover { border-color: #2e2e2e; color: #aaa; }
-
-	/* ── Save / Saved list ── */
-
-	.ae-section-hdr-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 0.6rem;
-	}
-	.ae-section-hdr-row .ae-section-hdr { margin-bottom: 0; }
-
-	.ae-section-actions {
-		display: flex;
-		gap: 0.3rem;
-	}
-
-	.ae-btn-save {
-		color: hsl(190, 55%, 42%);
-		border-color: hsl(190, 40%, 18%);
-	}
-	.ae-btn-save:hover:not(:disabled) {
-		border-color: hsl(190, 50%, 28%);
-		color: hsl(190, 70%, 62%);
-	}
-
-	.ae-saved-row {
-		display: flex;
-		align-items: center;
-		gap: 3px;
-	}
-
-	.ae-saved-load {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.ae-saved-del {
-		flex-shrink: 0;
-		padding: 0.22rem 0.4rem;
-		font-size: 0.62rem;
-	}
 </style>
