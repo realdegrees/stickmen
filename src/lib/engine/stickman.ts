@@ -213,10 +213,10 @@ export class Stickman implements Renderable {
 		if (this.hat) {
 			const neck = p.neck;
 			const angle = Math.atan2(
-				(head.x - neck.x) * this.direction,
+				head.x - neck.x,
 				neck.y - head.y
 			);
-			this.hat.draw(ctx, head.x, head.y, headRadius, angle, colorStr);
+			this.hat.draw(ctx, head.x, head.y, headRadius, angle, colorStr, this.direction);
 		}
 
 		// Draw rope spool

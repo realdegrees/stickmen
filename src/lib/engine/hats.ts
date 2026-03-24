@@ -25,6 +25,7 @@ export interface HatDef {
     headRadius: number,
     angle: number,
     color: string,
+    direction: 1 | -1,
   ) => void;
 }
 
@@ -179,9 +180,10 @@ export function createHat(def: HatLayerDef | string): HatDef {
   return {
     id: def.id,
     label: def.label,
-    draw(ctx, hx, hy, hr, hatAngle, color) {
+    draw(ctx, hx, hy, hr, hatAngle, color, direction) {
       ctx.save();
       ctx.translate(hx, hy - hr);
+      ctx.scale(direction, 1);
       ctx.rotate(hatAngle);
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
