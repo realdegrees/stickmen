@@ -121,6 +121,22 @@ export interface PhysicsConfig {
 	ragdollMotionlessTimeout: number;
 	/** px beyond container boundary before triggering OOB reset (default: 50) */
 	oobMargin: number;
+	/**
+	 * Horizontal grace distance in px added to both sides of a platform edge when
+	 * deciding whether a grounded stickman has walked off. Prevents float-precision
+	 * jitter from triggering a fall while the foot is still visually on the edge.
+	 * Auto-computed as headRadius * maxBodyScale if not set explicitly.
+	 */
+	groundedEdgeGrace: number;
+	/**
+	 * Vertical grace distance in px used when raycasting for a surface beneath the
+	 * stickman's feet. The query origin is shifted upward by this amount so that
+	 * sub-pixel float drift (foot sitting fractionally above the surface) does not
+	 * break the grounded check. Kept very small (default: 2) — matching the existing
+	 * 2 px downward penetration tolerance in SurfaceQuery — so the stickman is never
+	 * considered grounded before their feet visually reach the surface.
+	 */
+	groundedVerticalGrace: number;
 }
 
 export interface StaminaConfig {
@@ -213,7 +229,10 @@ export const DEFAULT_CONFIG: StickmenConfig = {
 		surfaceSearchRadius: 200,
 		motionlessThresholdSq: 0.5,
 		ragdollMotionlessTimeout: 1500,
-		oobMargin: 50
+		oobMargin: 50,
+		// Derived in resolveConfig from headRadius * maxBodyScale; placeholder here
+		groundedEdgeGrace: 0,
+		groundedVerticalGrace: 2
 	},
 	stamina: {
 		drainRate: 0.2,
@@ -269,9 +288,14 @@ export function resolveConfig(partial?: DeepPartial<StickmenConfig>): ResolvedSt
 		...navgridPartial
 	};
 
+	const physicsPartial: DeepPartial<PhysicsConfig> = partial?.physics ?? {};
 	const physics: PhysicsConfig = {
 		...DEFAULT_CONFIG.physics,
-		...partial?.physics
+		...physicsPartial,
+		// Auto-compute groundedEdgeGrace from head size unless explicitly overridden
+		groundedEdgeGrace:
+			physicsPartial.groundedEdgeGrace ??
+			stickman.headRadius * stickman.maxBodyScale
 	};
 
 	const stamina: StaminaConfig = {

@@ -146,8 +146,10 @@ export class PathExecutor {
 
 	private snapToSurface(): void {
 		const fig = this.actions.fig;
-		const surface = this.physics.findSurface(fig.x, fig.y, 10);
-		if (surface && fig.x >= surface.xMin && fig.x <= surface.xMax) {
+		const hGrace = this.physics.c.groundedEdgeGrace;
+		const vGrace = this.physics.c.groundedVerticalGrace;
+		const surface = this.physics.findSurface(fig.x, fig.y - vGrace, 10 + vGrace);
+		if (surface && fig.x >= surface.xMin - hGrace && fig.x <= surface.xMax + hGrace) {
 			fig.y = surface.y;
 			this.physics.grounded = true;
 			this.physics.vy = 0;

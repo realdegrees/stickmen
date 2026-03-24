@@ -35,7 +35,7 @@ export interface ContainerBounds {
 export class StickmanPhysics {
 	private fig: Stickman;
 	findSurface: SurfaceQuery;
-	private c: PhysicsConfig;
+	c: PhysicsConfig;
 
 	vx = 0;
 	vy = 0;
@@ -113,8 +113,9 @@ export class StickmanPhysics {
 			this.fig.poseOverride = null;
 
 			const wasGrounded = this.grounded;
-			const surface = this.findSurface(this.fig.x, this.fig.y, 3);
-			this.grounded = surface !== null && Math.abs(this.fig.y - surface.y) < 3;
+			const vGrace = this.c.groundedVerticalGrace;
+			const surface = this.findSurface(this.fig.x, this.fig.y - vGrace, 3 + vGrace);
+			this.grounded = surface !== null && Math.abs(this.fig.y - surface.y) < 3 + vGrace;
 
 			if (wasGrounded && !this.grounded) {
 				const state = this.fig.animationId;
@@ -136,8 +137,10 @@ export class StickmanPhysics {
 
 		// Grounded with no velocity — skip gravity cycle
 		if (this.grounded && this.vy === 0 && this.vx === 0) {
-			const surface = this.findSurface(this.fig.x, this.fig.y, 3);
-			if (!surface || this.fig.x < surface.xMin || this.fig.x > surface.xMax) {
+			const vGrace = this.c.groundedVerticalGrace;
+			const surface = this.findSurface(this.fig.x, this.fig.y - vGrace, 3 + vGrace);
+			const grace = this.c.groundedEdgeGrace;
+			if (!surface || this.fig.x < surface.xMin - grace || this.fig.x > surface.xMax + grace) {
 				this.grounded = false;
 				this.fig.setState('jump');
 				this.fig.animParams = { ...this.fig.animParams, subPhase: 0.5 };
@@ -177,8 +180,10 @@ export class StickmanPhysics {
 
 		// Edge fall detection
 		if (this.grounded && this.vy === 0) {
-			const surface = this.findSurface(this.fig.x, this.fig.y, 3);
-			if (!surface || this.fig.x < surface.xMin || this.fig.x > surface.xMax) {
+			const vGrace = this.c.groundedVerticalGrace;
+			const surface = this.findSurface(this.fig.x, this.fig.y - vGrace, 3 + vGrace);
+			const grace = this.c.groundedEdgeGrace;
+			if (!surface || this.fig.x < surface.xMin - grace || this.fig.x > surface.xMax + grace) {
 				this.grounded = false;
 				this.fig.setState('jump');
 				this.fig.animParams = { ...this.fig.animParams, subPhase: 0.5 };
