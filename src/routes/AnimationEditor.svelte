@@ -176,7 +176,7 @@
 
 	type DragTarget =
 		| { type: 'knob'; key: string; cx: number; cy: number; angleOffset: number }
-		| { type: 'offset'; rect: DOMRect };
+		| { type: 'offset'; rect: DOMRect; grabOffsetX: number; grabOffsetY: number };
 	let dragTarget: DragTarget | null = $state(null);
 
 	// Mini canvas constants
@@ -264,7 +264,11 @@
 	function onOffsetMouseDown(e: MouseEvent) {
 		e.preventDefault();
 		snap();
-		dragTarget = { type: 'offset', rect: (e.currentTarget as HTMLElement).getBoundingClientRect() };
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		// Compute where the dot currently is in client-space so we can grab without snapping
+		const dotClientX = rect.left + rect.width  * (0.5 + offsetX / 20);
+		const dotClientY = rect.top  + rect.height * (0.5 - offsetY / 20);
+		dragTarget = { type: 'offset', rect, grabOffsetX: e.clientX - dotClientX, grabOffsetY: e.clientY - dotClientY };
 	}
 
 	function onWindowMouseMove(e: MouseEvent) {
@@ -278,9 +282,9 @@
 			upsertCurrentPose();
 			propagateKnobToSecondary(dragTarget.key, deg);
 		} else {
-			const { rect } = dragTarget;
-			let ox = Math.max(-20, Math.min(20, ((e.clientX - rect.left) / rect.width - 0.5) * 40));
-			let oy = Math.max(-12, Math.min(4,  (0.5 - (e.clientY - rect.top) / rect.height) * 32));
+			const { rect, grabOffsetX, grabOffsetY } = dragTarget;
+			let ox = Math.max(-10, Math.min(10, ((e.clientX - grabOffsetX - rect.left) / rect.width  - 0.5) * 20));
+			let oy = Math.max(-10, Math.min(10, (0.5 - (e.clientY - grabOffsetY - rect.top)  / rect.height) * 20));
 			if (e.shiftKey) { ox = Math.round(ox); oy = Math.round(oy); }
 			offsetX = ox;
 			offsetY = oy;
@@ -678,8 +682,8 @@
 {/snippet}
 
 {#snippet offpad()}
-	{@const px = 26 + Math.max(-17, Math.min(17, (offsetX / 20) * 17))}
-	{@const py = 26 - Math.max(-17, Math.min(17, (offsetY / 12) * 17))}
+	{@const px = 26 + (offsetX / 10) * 17}
+	{@const py = 26 - (offsetY / 10) * 17}
 	{@const active = dragTarget?.type === 'offset'}
 	{@const multi = selectedKfIdxs.length > 1}
 	<div
@@ -692,9 +696,9 @@
 		aria-valuenow={0}
 	>
 		<svg class="ae-knob-svg" viewBox="0 0 52 52">
-			<circle cx="26" cy="26" r="21" fill="none" stroke={active ? '#383838' : '#1e1e1e'} stroke-width="1.5"/>
-			<line x1="26" y1="8" x2="26" y2="44" stroke="#1e1e1e" stroke-width="1"/>
-			<line x1="8" y1="26" x2="44" y2="26" stroke="#1e1e1e" stroke-width="1"/>
+			<rect x="5" y="5" width="42" height="42" rx="2" fill="none" stroke={active ? '#383838' : '#1e1e1e'} stroke-width="1.5"/>
+			<line x1="26" y1="5" x2="26" y2="47" stroke="#1e1e1e" stroke-width="1"/>
+			<line x1="5" y1="26" x2="47" y2="26" stroke="#1e1e1e" stroke-width="1"/>
 			<circle cx="26" cy="26" r="1.5" fill="#2a2a2a"/>
 			<circle cx={px} cy={py} r="4"
 				fill={active ? (multi ? 'hsl(38,95%,72%)' : 'hsl(190,80%,70%)') : (multi ? 'hsl(38,88%,55%)' : 'hsl(190,65%,52%)')}/>
