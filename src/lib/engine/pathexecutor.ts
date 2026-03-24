@@ -68,14 +68,14 @@ export class PathExecutor {
 		if (this.physics.surfaceLost) {
 			this.physics.surfaceLost = false;
 			this.actions.cancel();
-			this.clearPath();
+			// Path is preserved — the stickman will resume once grounded again.
 			this.actions.fig.setState('jump');
 			this.actions.fig.animParams = { ...this.actions.fig.animParams, subPhase: 0.5 };
 			return;
 		}
 
 		if (this.physics.ragdolling) {
-			this.clearPath();
+			// Path is preserved — the stickman will resume once the ragdoll ends.
 			return;
 		}
 

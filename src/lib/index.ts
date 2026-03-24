@@ -13,7 +13,7 @@ export { StickmenEngine } from './engine/engine.js';
 export type { SpawnOptions } from './engine/engine.js';
 
 // ── Behavior System ───────────────────────────────────────────────────
-export type { StickmanBehavior, BehaviorHandle, BehaviorInput } from './engine/behaviors/types.js';
+export type { StickmanBehavior, BehaviorHandle, BehaviorInput, PathHandle, PathEventMap, PathOptions } from './engine/behaviors/types.js';
 export { WanderBehavior, FollowBehavior, IdleBehavior } from './engine/behaviors/defaults.js';
 
 import { WanderBehavior, FollowBehavior, IdleBehavior } from './engine/behaviors/defaults.js';

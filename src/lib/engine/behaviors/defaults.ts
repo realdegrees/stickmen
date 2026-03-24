@@ -22,34 +22,37 @@ export class WanderBehavior implements StickmanBehavior {
 	/** Set to make the stickman flee from a point instead of wandering. */
 	fleeFrom: Point | null = null;
 
-	private unsubs: Array<() => void> = [];
+	private _active = false;
 	private timeout: ReturnType<typeof setTimeout> | undefined;
 
 	onAttach(handle: BehaviorHandle): void {
-		handle.pathRandom();
-
-		this.unsubs.push(
-			handle.on('arrived', () => {
-				if (this.fleeFrom) return; // flee update() handles next move
-				this.timeout = setTimeout(
-					() => { if (handle.alive) handle.pathRandom(); },
-					Math.random() * 1500 + 250
-				);
-			})
-		);
+		this._active = true;
+		this._wander(handle);
 	}
 
 	onDetach(_handle: BehaviorHandle): void {
-		this.unsubs.forEach(u => u());
-		this.unsubs = [];
+		this._active = false;
 		clearTimeout(this.timeout);
 		this.timeout = undefined;
 	}
 
 	update(handle: BehaviorHandle, _dt: number): void {
 		if (this.fleeFrom && !handle.hasPath) {
-			handle.pathAway(this.fleeFrom);
+			handle.tryPathAway(this.fleeFrom);
 		}
+	}
+
+	private _wander(handle: BehaviorHandle): void {
+		if (!this._active) return;
+		const path = handle.tryPathRandom();
+		if (!path) return;
+		path.on('arrived', () => {
+			if (!this._active || this.fleeFrom) return;
+			this.timeout = setTimeout(
+				() => { if (handle.alive && this._active) this._wander(handle); },
+				Math.random() * 1500 + 250
+			);
+		});
 	}
 }
 
@@ -96,7 +99,7 @@ export class FollowBehavior implements StickmanBehavior {
 			const dx = this._target.x - this._lastX;
 			const dy = this._target.y - this._lastY;
 			if (dx * dx + dy * dy > this.minDelta * this.minDelta) {
-				handle.pathTo(this._target.x, this._target.y);
+				handle.tryPathTo(this._target.x, this._target.y);
 				this._lastX = this._target.x;
 				this._lastY = this._target.y;
 			}

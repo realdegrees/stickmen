@@ -9,7 +9,7 @@ import type { StickmenEngine, StickmanEntry } from './engine/engine.js';
 import type { ColorInput, Point } from './engine/types.js';
 import { resolveColor } from './engine/types.js';
 import { EventEmitter, type StickmanEventMap } from './events.js';
-import type { StickmanBehavior } from './engine/behaviors/types.js';
+import type { StickmanBehavior, PathHandle, PathOptions } from './engine/behaviors/types.js';
 
 export class StickmanHandle {
 	readonly id: string;
@@ -66,20 +66,28 @@ export class StickmanHandle {
 		return this.getEntry()?.controller.hasPath ?? false;
 	}
 
-	pathTo(x: number, y: number): boolean {
-		return this.getEntry()?.controller.pathTo(x, y) ?? false;
+	get currentPath(): PathHandle | null {
+		return this.getEntry()?.controller.currentPath ?? null;
 	}
 
-	pathRandom(minDist?: number, maxDist?: number): boolean {
-		return this.getEntry()?.controller.pathRandom(minDist, maxDist) ?? false;
+	tryPathTo(x: number, y: number, opts?: PathOptions): PathHandle | null {
+		return this.getEntry()?.controller.tryPathTo(x, y, opts) ?? null;
 	}
 
-	pathAway(from: Point): boolean {
-		return this.getEntry()?.controller.pathAway(from) ?? false;
+	tryPathRandom(minDist?: number, maxDist?: number, opts?: PathOptions): PathHandle | null {
+		return this.getEntry()?.controller.tryPathRandom(minDist, maxDist, opts) ?? null;
 	}
 
-	clearPath(): void {
-		this.getEntry()?.controller.clearPath();
+	tryPathAway(from: Point, opts?: PathOptions): PathHandle | null {
+		return this.getEntry()?.controller.tryPathAway(from, opts) ?? null;
+	}
+
+	tryPathToElement(element: HTMLElement, opts?: PathOptions): PathHandle | null {
+		return this.getEntry()?.controller.tryPathToElement(element, this.container, opts) ?? null;
+	}
+
+	tryClearPath(): boolean {
+		return this.getEntry()?.controller.tryClearPath() ?? false;
 	}
 
 	// ── Visual ───────────────────────────────────────────────────────

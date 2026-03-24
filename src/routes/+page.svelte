@@ -287,7 +287,8 @@
 				<div class="card small" data-walkable>
 					<h3>Targeting</h3>
 					<p>Navigate to a point or follow the cursor with a behavior.</p>
-					<pre class="code-block"><code>fig.pathTo(300, 100);
+					<pre class="code-block"><code>const path = fig.tryPathTo(300, 100);
+path?.on('arrived', () => console.log('there!'));
 
 // Or follow the cursor:
 stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>

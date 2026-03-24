@@ -5,15 +5,13 @@
 export interface StickmanEventMap {
 	[key: string]: unknown;
 	statechange: { from: string; to: string };
-	arrived: { position: { x: number; y: number } };
-	pathstart: {};
-	landed: { position: { x: number; y: number }; hard: boolean };
-	ragdoll: {};
-	proximity: { otherId: string; distance: number };
-	fleestart: { from: { x: number; y: number } };
-	fleestop: {};
-	spawned: {};
-	destroyed: {};
+	landed:      { position: { x: number; y: number }; hard: boolean };
+	ragdoll:     {};
+	proximity:   { otherId: string; distance: number };
+	fleestart:   { from: { x: number; y: number } };
+	fleestop:    {};
+	spawned:     {};
+	destroyed:   {};
 }
 
 export type StickmanEventName = keyof StickmanEventMap;
