@@ -253,7 +253,7 @@
 		const { type, x, y, size, ...rest } = s as HatShape & Record<string, unknown>;
 		const pos = `x: ${round3(x as number)}, y: ${round3(y as number)}, size: ${round3(size as number)}`;
 		const extras = Object.entries(rest)
-			.filter(([, v]) => v !== undefined)
+			.filter(([k, v]) => v !== undefined && !(k === 'thickness' && v === 1))
 			.map(([k, v]) => typeof v === 'boolean' ? `${k}: ${v}` : `${k}: ${round3(v as number)}`);
 		return `    { type: '${type}', ${pos}${extras.length ? ', ' + extras.join(', ') : ''} }`;
 	}
@@ -511,6 +511,17 @@
 							<span class="hb-val">{bow.toFixed(2)}</span>
 						</label>
 					{/if}
+
+					<!-- Thickness — all shapes -->
+					<label class="hb-field">
+						<span class="hb-label">width</span>
+						<input class="hb-slider" type="range" min="1" max="10" step="0.5"
+							value={(s as {thickness?: number}).thickness ?? 1}
+							onpointerdown={snap}
+							oninput={(e) => updateShape(i, { thickness: parseFloat((e.target as HTMLInputElement).value) })}
+						/>
+						<span class="hb-val">{(s as {thickness?: number}).thickness ?? 1}px</span>
+					</label>
 
 					<!-- Read-only position/size hints -->
 					<div class="hb-hint-row">

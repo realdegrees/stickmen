@@ -273,8 +273,8 @@ const builtinHats: HatDef[] = [
  *   curve    → horizontal, bowing upward
  */
 export type HatShape =
-  | { type: "line"; x: number; y: number; size: number; angle?: number }
-  | { type: "circle"; x: number; y: number; size: number; fill?: boolean }
+  | { type: "line"; x: number; y: number; size: number; angle?: number; thickness?: number }
+  | { type: "circle"; x: number; y: number; size: number; fill?: boolean; thickness?: number }
   | {
       type: "arc";
       x: number;
@@ -283,6 +283,7 @@ export type HatShape =
       angle?: number;
       span?: number;
       fill?: boolean;
+      thickness?: number;
     }
   | {
       type: "rect";
@@ -292,6 +293,7 @@ export type HatShape =
       angle?: number;
       aspect?: number;
       fill?: boolean;
+      thickness?: number;
     }
   | {
       type: "triangle";
@@ -300,6 +302,7 @@ export type HatShape =
       size: number;
       angle?: number;
       fill?: boolean;
+      thickness?: number;
     }
   | {
       type: "curve";
@@ -308,6 +311,7 @@ export type HatShape =
       size: number;
       angle?: number;
       curvature?: number;
+      thickness?: number;
     };
 
 /** Serializable hat definition — analogous to KeyframeAnimationDef. */
@@ -332,6 +336,7 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
 
   switch (s.type) {
     case "line": {
+      if (s.thickness != null) ctx.lineWidth = s.thickness;
       ctx.beginPath();
       ctx.moveTo(-r, 0);
       ctx.lineTo(r, 0);
@@ -339,6 +344,7 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
       break;
     }
     case "circle": {
+      if (s.thickness != null) ctx.lineWidth = s.thickness;
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       if (s.fill) ctx.fill();
@@ -346,6 +352,7 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
       break;
     }
     case "arc": {
+      if (s.thickness != null) ctx.lineWidth = s.thickness;
       // Canonical = upper semicircle (dome). angle rotates it.
       // span = arc width in degrees, centred on the "up" direction.
       const span = ((s.span ?? 180) * Math.PI) / 180;
@@ -357,12 +364,14 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
       break;
     }
     case "rect": {
+      if (s.thickness != null) ctx.lineWidth = s.thickness;
       const h = r * (s.aspect ?? 1);
       if (s.fill) ctx.fillRect(-r, -h, r * 2, h * 2);
       ctx.strokeRect(-r, -h, r * 2, h * 2);
       break;
     }
     case "triangle": {
+      if (s.thickness != null) ctx.lineWidth = s.thickness;
       ctx.beginPath();
       ctx.moveTo(0, -r);
       ctx.lineTo(r * SQ3H, r * 0.5);
@@ -375,6 +384,7 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
     case "curve": {
       // Symmetric quadratic bezier: endpoints at (±size, 0), control bow upward.
       // curvature > 0 = bow toward hat top; < 0 = bow toward face.
+      if (s.thickness != null) ctx.lineWidth = s.thickness;
       const c = s.curvature ?? 0.5;
       ctx.beginPath();
       ctx.moveTo(-r, 0);
