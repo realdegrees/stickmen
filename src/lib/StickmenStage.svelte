@@ -27,7 +27,7 @@
 		postProcess?: PostProcessFn;
 		proximityThreshold?: number;
 		canvasZ?: number;
-		onready?: (api: { spawn: typeof spawn; getAll: typeof getAll; clear: typeof clear; rebuild: typeof rebuild }) => void;
+		onready?: (api: { spawn: typeof spawn; getAll: typeof getAll; clear: typeof clear; rebuildNavgrid: typeof rebuildNavgrid }) => void;
 		children?: Snippet;
 		class?: string;
 	}
@@ -109,7 +109,7 @@
 		handles.clear();
 	}
 
-	export function rebuild(): void {
+	export function rebuildNavgrid(): void {
 		engine?.rebuildGrid();
 	}
 
@@ -153,7 +153,7 @@
 
 		engine.init(containerEl, canvasEl);
 		engine.setDebug(debug);
-		onready?.({ spawn, getAll, clear, rebuild });
+		onready?.({ spawn, getAll, clear, rebuildNavgrid });
 
 		return () => {
 			clear();

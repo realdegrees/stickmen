@@ -69,6 +69,7 @@ export class StickmenEngine {
 	private resizeObserver: ResizeObserver | null = null;
 	private mutationObserver: MutationObserver | null = null;
 	private rebuildTimeout: ReturnType<typeof setTimeout> | null = null;
+	private handleAnimationSettle = () => this.scheduleRebuild();
 	private debugRenderable: Renderable | null = null;
 
 	debug = false;
@@ -151,6 +152,10 @@ export class StickmenEngine {
 		});
 		this.mutationObserver.observe(container, { childList: true, subtree: true });
 
+		// Auto-rebuild when CSS transitions/animations settle
+		container.addEventListener('transitionend', this.handleAnimationSettle);
+		container.addEventListener('animationend', this.handleAnimationSettle);
+
 		// Deferred re-scan for late-rendering DOM elements
 		setTimeout(() => {
 			this.resizeCanvas();
@@ -165,6 +170,8 @@ export class StickmenEngine {
 
 		this.resizeObserver?.disconnect();
 		this.mutationObserver?.disconnect();
+		this._container?.removeEventListener('transitionend', this.handleAnimationSettle);
+		this._container?.removeEventListener('animationend', this.handleAnimationSettle);
 		if (this.rebuildTimeout) clearTimeout(this.rebuildTimeout);
 
 		this.renderer?.destroy();
