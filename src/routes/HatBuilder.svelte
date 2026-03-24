@@ -30,7 +30,8 @@
 
 	let shapes: HatShape[]  = $state([]);
 	let mirrors: boolean[]  = $state([]); // parallel to shapes; mirror[i] = draw reflected copy of shapes[i]
-	let selectedIdx: number | null = $state(null);
+	let selectedIdxs: number[] = $state([]);
+	const selectedIdx = $derived(selectedIdxs.at(-1) ?? null);
 	let hatId    = $state('my-hat');
 	let hatLabel = $state('My Hat');
 	let addType: ShapeType = $state('arc');
@@ -69,21 +70,26 @@
 		if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); doRedo(); }
 	}
 
-	// Drag state — plain vars (no reactivity; we mutate shapes[] to trigger re-render)
-	type DragState = {
-		mode: 'move' | 'resize';
-		idx: number;
-		startMX: number; startMY: number;
-		startX: number; startY: number;
-		startSize: number;
-		centerX: number; centerY: number;
-		// Offsets so the handle doesn't snap on grab:
-		//   newSize  = dist(mouse, center)/HR  + sizeOffset
-		//   newAngle = atan2(dy, dx)*180/π     + angleOffset
-		sizeOffset: number;
-		angleOffset: number;
-	};
+	// Drag state — discriminated union; plain var (no reactivity needed)
+	type DragState =
+		| { kind: 'single'; mode: 'move' | 'resize';
+			idx: number; startMX: number; startMY: number;
+			startX: number; startY: number; startSize: number;
+			centerX: number; centerY: number;
+			sizeOffset: number; angleOffset: number }
+		| { kind: 'multi-move';
+			idxs: number[]; startMX: number; startMY: number;
+			startShapes: { x: number; y: number }[] }
+		| { kind: 'multi-resize';
+			idxs: number[];
+			startShapes: { x: number; y: number; size: number; angle: number; cx: number; cy: number }[];
+			groupCX: number; groupCY: number;
+			grabDist: number; grabAngle: number };
 	let dragging: DragState | null = null;
+
+	// Marquee drag-select state
+	type Marquee = { x0: number; y0: number; x1: number; y1: number; additive: boolean };
+	let marquee: Marquee | null = $state(null);
 
 	// ── Canvas coordinate helpers ──────────────────────────────────────
 
@@ -101,6 +107,26 @@
 		return { x: c.x + dist * Math.cos(rad), y: c.y + dist * Math.sin(rad) };
 	}
 
+	/** Canvas-space centroid of all currently selected shapes. */
+	function groupCenter() {
+		const cs = selectedIdxs.map(i => centerOf(shapes[i]));
+		return {
+			x: cs.reduce((s, c) => s + c.x, 0) / cs.length,
+			y: cs.reduce((s, c) => s + c.y, 0) / cs.length
+		};
+	}
+
+	/** Position of the single group resize handle (right side of group bounding circle). */
+	function groupHandlePos() {
+		const gc = groupCenter();
+		// Radius = max reach of any selected shape from group centre
+		const maxReach = Math.max(...selectedIdxs.map(i => {
+			const c = centerOf(shapes[i]);
+			return Math.hypot(c.x - gc.x, c.y - gc.y) + shapes[i].size * HR + 7;
+		}));
+		return { x: gc.x + Math.max(maxReach, 20), y: gc.y, gc };
+	}
+
 	/** Reflect a shape across the vertical centre (x → −x, angle → −angle). */
 	function computeMirror(s: HatShape): HatShape {
 		const angle = (s as { angle?: number }).angle ?? 0;
@@ -111,13 +137,27 @@
 
 	// ── Hit testing ────────────────────────────────────────────────────
 
-	function hitTest(mx: number, my: number): { type: 'shape' | 'handle'; idx: number } | null {
-		// Handles take priority; check top-most (last) shape first
+	function hitTest(mx: number, my: number, skip: number[] = []): { type: 'shape' | 'handle'; idx: number } | null {
+		if (selectedIdxs.length > 1) {
+			// Multi-select mode: test group handle (idx=-1) then any shape body
+			const gh = groupHandlePos();
+			if (Math.hypot(mx - gh.x, my - gh.y) < 9) return { type: 'handle', idx: -1 };
+			for (let i = shapes.length - 1; i >= 0; i--) {
+				if (skip.includes(i)) continue;
+				const c = centerOf(shapes[i]);
+				const threshold = Math.max(shapes[i].size * HR * 0.9, 12);
+				if (Math.hypot(mx - c.x, my - c.y) < threshold) return { type: 'shape', idx: i };
+			}
+			return null;
+		}
+		// Single-select mode: handles take priority, check top-most first
 		for (let i = shapes.length - 1; i >= 0; i--) {
+			if (skip.includes(i)) continue;
 			const h = handleOf(shapes[i]);
 			if (Math.hypot(mx - h.x, my - h.y) < 9) return { type: 'handle', idx: i };
 		}
 		for (let i = shapes.length - 1; i >= 0; i--) {
+			if (skip.includes(i)) continue;
 			const c = centerOf(shapes[i]);
 			const threshold = Math.max(shapes[i].size * HR * 0.9, 12);
 			if (Math.hypot(mx - c.x, my - c.y) < threshold) return { type: 'shape', idx: i };
@@ -132,31 +172,91 @@
 		const mx = e.clientX - rect.left;
 		const my = e.clientY - rect.top;
 
+		const ctrl = e.ctrlKey || e.metaKey;
+
+		if (ctrl) {
+			// Pass 1: hit-test skipping already-selected shapes to reach what's underneath
+			const hitUnder = hitTest(mx, my, selectedIdxs);
+			if (hitUnder && hitUnder.idx >= 0) {
+				// Found an unselected shape underneath — add it
+				selectedIdxs = [...selectedIdxs, hitUnder.idx];
+			} else {
+				// Pass 2: fall back to normal hit-test — toggle a selected shape out, or start marquee
+				const hitAny = hitTest(mx, my);
+				if (hitAny && hitAny.idx >= 0 && selectedIdxs.includes(hitAny.idx)) {
+					selectedIdxs = selectedIdxs.filter(i => i !== hitAny.idx);
+				} else {
+					marquee = { x0: mx, y0: my, x1: mx, y1: my, additive: true };
+				}
+			}
+			e.preventDefault();
+			return;
+		}
+
 		const hit = hitTest(mx, my);
-		if (hit) {
-			snap(); // snapshot before any drag mutates shapes
-			selectedIdx = hit.idx;
+
+		if (!hit) {
+			// Start a marquee drag-select on empty canvas space
+			marquee = { x0: mx, y0: my, x1: mx, y1: my, additive: false };
+			return;
+		}
+
+		// ── Non-ctrl hit: decide drag kind ────────────────────────────
+		const isMulti = selectedIdxs.length > 1;
+
+		if (isMulti && hit.idx === -1) {
+			// Group handle hit → multi-resize
+			snap();
+			const gh = groupHandlePos();
+			const { gc } = gh;
+			dragging = {
+				kind: 'multi-resize',
+				idxs: [...selectedIdxs],
+				startShapes: selectedIdxs.map(i => {
+					const c = centerOf(shapes[i]);
+					return { x: shapes[i].x, y: shapes[i].y, size: shapes[i].size,
+					         angle: (shapes[i] as { angle?: number }).angle ?? 0,
+					         cx: c.x, cy: c.y };
+				}),
+				groupCX: gc.x, groupCY: gc.y,
+				grabDist: Math.hypot(mx - gc.x, my - gc.y),
+				grabAngle: Math.atan2(my - gc.y, mx - gc.x) * 180 / Math.PI
+			};
+			canvasCursor = 'grabbing';
+			e.preventDefault();
+
+		} else if (isMulti && selectedIdxs.includes(hit.idx)) {
+			// Body of an already-selected shape → multi-move
+			snap();
+			dragging = {
+				kind: 'multi-move',
+				idxs: [...selectedIdxs],
+				startMX: mx, startMY: my,
+				startShapes: selectedIdxs.map(i => ({ x: shapes[i].x, y: shapes[i].y }))
+			};
+			canvasCursor = 'grabbing';
+			e.preventDefault();
+
+		} else {
+			// Single-shape drag (or clicking a non-selected shape collapses selection)
+			snap();
+			selectedIdxs = [hit.idx];
 			const s = shapes[hit.idx];
 			const c = centerOf(s);
-			// Compute grab offsets so size/angle don't snap on the first frame
 			const grabDist  = Math.hypot(mx - c.x, my - c.y);
 			const grabAngle = Math.atan2(my - c.y, mx - c.x) * 180 / Math.PI;
 			const shapeAngle = (s as { angle?: number }).angle ?? 0;
 			dragging = {
+				kind: 'single',
 				mode: hit.type === 'handle' ? 'resize' : 'move',
-				idx: hit.idx,
-				startMX: mx, startMY: my,
-				startX: s.x, startY: s.y,
-				startSize: s.size,
+				idx: hit.idx, startMX: mx, startMY: my,
+				startX: s.x, startY: s.y, startSize: s.size,
 				centerX: c.x, centerY: c.y,
 				sizeOffset:  s.size  - grabDist / HR,
 				angleOffset: shapeAngle - grabAngle
 			};
 			canvasCursor = 'grabbing';
 			e.preventDefault();
-		} else {
-			selectedIdx = null;
-			dragging = null;
 		}
 	}
 
@@ -166,16 +266,26 @@
 	}
 
 	function onWindowMouseMove(e: MouseEvent) {
+		// Update marquee bounds (checked before shape-drag guard)
+		if (marquee) {
+			const rect = canvas.getBoundingClientRect();
+			marquee = { ...marquee,
+				x1: e.clientX - rect.left,
+				y1: e.clientY - rect.top
+			};
+			return;
+		}
+
 		if (!dragging) {
-			// Update cursor hint
+			// Cursor hint
 			if (canvas) {
 				const rect = canvas.getBoundingClientRect();
 				const mx = e.clientX - rect.left;
 				const my = e.clientY - rect.top;
-				// Only update cursor if mouse is within canvas bounds
 				if (mx >= 0 && mx <= CW && my >= 0 && my <= CH) {
 					const hit = hitTest(mx, my);
-					canvasCursor = hit ? (hit.type === 'handle' ? 'grab' : 'grab') : 'crosshair';
+					const ctrl = e.ctrlKey || e.metaKey;
+					canvasCursor = hit ? (ctrl ? 'pointer' : 'grab') : 'crosshair';
 				}
 			}
 			return;
@@ -185,34 +295,103 @@
 		const mx = e.clientX - rect.left;
 		const my = e.clientY - rect.top;
 		const shift = e.shiftKey;
-
 		const d = dragging;
-		if (d.mode === 'move') {
+
+		if (d.kind === 'single') {
+			if (d.mode === 'move') {
+				const dx = (mx - d.startMX) / HR;
+				const dy = (my - d.startMY) / HR;
+				const nx = snapTo(d.startX + dx, 0.25, shift);
+				const ny = snapTo(d.startY + dy, 0.25, shift);
+				shapes = shapes.map((s, i) => i === d.idx
+					? { ...s, x: round3(nx), y: round3(ny) } as HatShape
+					: s
+				);
+			} else {
+				// Resize + rotate — offset-corrected so no snap on grab
+				const ddx = mx - d.centerX;
+				const ddy = my - d.centerY;
+				const rawSize  = Math.max(0.05, Math.hypot(ddx, ddy) / HR + d.sizeOffset);
+				const rawAngle = Math.atan2(ddy, ddx) * 180 / Math.PI + d.angleOffset;
+				const newSize  = round3(snapTo(rawSize,  0.25, shift));
+				const newAngle = round3(snapTo(rawAngle, 15,   shift));
+				shapes = shapes.map((s, i) => {
+					if (i !== d.idx) return s;
+					if (s.type === 'circle') return { ...s, size: newSize } as HatShape;
+					return { ...s, size: newSize, angle: newAngle } as HatShape;
+				});
+			}
+
+		} else if (d.kind === 'multi-move') {
 			const dx = (mx - d.startMX) / HR;
 			const dy = (my - d.startMY) / HR;
-			const nx = snapTo(d.startX + dx, 0.25, shift);
-			const ny = snapTo(d.startY + dy, 0.25, shift);
-			shapes = shapes.map((s, i) => i === d.idx
-				? { ...s, x: round3(nx), y: round3(ny) } as HatShape
-				: s
-			);
-		} else {
-			// Resize + rotate via polar coords, offset-corrected so no snap on grab
-			const ddx = mx - d.centerX;
-			const ddy = my - d.centerY;
-			const rawSize  = Math.max(0.05, Math.hypot(ddx, ddy) / HR + d.sizeOffset);
-			const rawAngle = Math.atan2(ddy, ddx) * 180 / Math.PI + d.angleOffset;
-			const newSize  = round3(snapTo(rawSize,  0.25, shift));
-			const newAngle = round3(snapTo(rawAngle, 15,   shift));
 			shapes = shapes.map((s, i) => {
-				if (i !== d.idx) return s;
-				if (s.type === 'circle') return { ...s, size: newSize } as HatShape;
-				return { ...s, size: newSize, angle: newAngle } as HatShape;
+				const si = d.idxs.indexOf(i);
+				if (si < 0) return s;
+				const ss = d.startShapes[si];
+				return { ...s,
+					x: round3(snapTo(ss.x + dx, 0.25, shift)),
+					y: round3(snapTo(ss.y + dy, 0.25, shift))
+				} as HatShape;
+			});
+
+		} else {
+			// multi-resize: scale + rotate all shapes around group centre
+			const newDist  = Math.hypot(mx - d.groupCX, my - d.groupCY);
+			const newAngle = Math.atan2(my - d.groupCY, mx - d.groupCX) * 180 / Math.PI;
+			const scale    = d.grabDist > 0 ? Math.max(0.05, newDist / d.grabDist) : 1;
+			let   angleDelta = newAngle - d.grabAngle;
+			if (shift) angleDelta = Math.round(angleDelta / 15) * 15;
+			const rad = angleDelta * Math.PI / 180;
+			const cos = Math.cos(rad), sin = Math.sin(rad);
+
+			shapes = shapes.map((s, i) => {
+				const si = d.idxs.indexOf(i);
+				if (si < 0) return s;
+				const ss = d.startShapes[si];
+				// Rotate & scale canvas-space position from group centre
+				const relX = ss.cx - d.groupCX;
+				const relY = ss.cy - d.groupCY;
+				const newCX = d.groupCX + (relX * cos - relY * sin) * scale;
+				const newCY = d.groupCY + (relX * sin + relY * cos) * scale;
+				const newX    = round3((newCX - HX) / HR);
+				const newY    = round3((newCY - HAT_O_Y) / HR);
+				const newSize = round3(Math.max(0.05, ss.size * scale));
+				const newAng  = round3(ss.angle + angleDelta);
+				if (s.type === 'circle') return { ...s, x: newX, y: newY, size: newSize } as HatShape;
+				return { ...s, x: newX, y: newY, size: newSize, angle: newAng } as HatShape;
 			});
 		}
 	}
 
-	function onWindowMouseUp() { dragging = null; canvasCursor = 'crosshair'; }
+	function onWindowMouseUp() {
+		dragging = null;
+		canvasCursor = 'crosshair';
+
+		if (marquee) {
+			const m = marquee;
+			marquee = null;
+			const left   = Math.min(m.x0, m.x1);
+			const right  = Math.max(m.x0, m.x1);
+			const top    = Math.min(m.y0, m.y1);
+			const bottom = Math.max(m.y0, m.y1);
+			const tiny   = (right - left) < 4 && (bottom - top) < 4;
+
+			if (tiny) {
+				// Treat as a plain click on empty space
+				if (!m.additive) selectedIdxs = [];
+			} else {
+				// Select all shapes whose canvas-space centre falls inside the rect
+				const hits = shapes
+					.map((s, i) => ({ i, c: centerOf(s) }))
+					.filter(({ c }) => c.x >= left && c.x <= right && c.y >= top && c.y <= bottom)
+					.map(({ i }) => i);
+				selectedIdxs = m.additive
+					? [...new Set([...selectedIdxs, ...hits])]
+					: hits;
+			}
+		}
+	}
 
 	// ── Shape management ───────────────────────────────────────────────
 
@@ -220,18 +399,17 @@
 		snap();
 		shapes  = [...shapes,  { ...SHAPE_DEFAULTS[addType] } as HatShape];
 		mirrors = [...mirrors, false];
-		selectedIdx = shapes.length - 1;
+		selectedIdxs = [shapes.length - 1];
 	}
 
 	function deleteShapeAt(idx: number) {
 		snap();
 		shapes  = shapes.filter((_, i)  => i !== idx);
 		mirrors = mirrors.filter((_, i) => i !== idx);
-		if (selectedIdx === idx) {
-			selectedIdx = shapes.length > 0 ? Math.min(idx, shapes.length - 1) : null;
-		} else if (selectedIdx !== null && selectedIdx > idx) {
-			selectedIdx = selectedIdx - 1;
-		}
+		// Remove the deleted index, shift down any indices above it
+		selectedIdxs = selectedIdxs
+			.filter(i => i !== idx)
+			.map(i => i > idx ? i - 1 : i);
 	}
 
 	function toggleMirror(idx: number) {
@@ -243,6 +421,10 @@
 		shapes = shapes.map((s, idx) => idx === i ? { ...s, ...patch } as HatShape : s);
 	}
 
+	function updateShapes(idxs: number[], patch: Record<string, unknown>) {
+		shapes = shapes.map((s, idx) => idxs.includes(idx) ? { ...s, ...patch } as HatShape : s);
+	}
+
 	// ── Presets ────────────────────────────────────────────────────────
 
 	function loadPreset(key: string) {
@@ -252,7 +434,7 @@
 		hatId = def.id; hatLabel = def.label;
 		shapes  = def.shapes.map(s => ({ ...s }) as HatShape);
 		mirrors = shapes.map(() => false);
-		selectedIdx = shapes.length > 0 ? 0 : null;
+		selectedIdxs = shapes.length > 0 ? [0] : [];
 	}
 
 	// ── Code generation ────────────────────────────────────────────────
@@ -342,38 +524,97 @@
 			ctx.restore();
 		}
 
-		// Selection overlay
-		if (selectedIdx !== null && shapes[selectedIdx]) {
-			const s = shapes[selectedIdx];
-			const { x: cx, y: cy } = centerOf(s);
-			const { x: hx, y: hy } = handleOf(s);
+		// Glow pass — redraw selected shapes in amber so they pop against the cyan base
+		if (selectedIdxs.length > 0) {
+			const selShapes = selectedIdxs.map(i => shapes[i]).filter(Boolean) as HatShape[];
+			ctx.save();
+			ctx.shadowBlur  = 12;
+			ctx.shadowColor = 'hsl(38,95%,60%)';
+			createHat({ id: '', label: '', shapes: selShapes })
+				.draw(ctx, HX, HY, HR, 0, 'hsl(38,90%,65%)');
+			ctx.restore();
+		}
+
+		if (selectedIdxs.length > 1) {
+			// ── Group selection: one enclosing circle + one shared handle ──
+			const gh = groupHandlePos();
+			const gc = gh.gc;
+			const groupRadius = gh.x - gc.x;
 
 			ctx.save();
 
-			// Dashed selection ring
+			// Dashed group circle
 			ctx.setLineDash([3, 3]);
-			ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+			ctx.strokeStyle = 'rgba(255,255,255,0.20)';
 			ctx.lineWidth = 1;
 			ctx.beginPath();
-			ctx.arc(cx, cy, s.size * HR + 6, 0, Math.PI * 2);
+			ctx.arc(gc.x, gc.y, groupRadius, 0, Math.PI * 2);
 			ctx.stroke();
 			ctx.setLineDash([]);
 
-			// Centre dot
-			ctx.fillStyle = 'rgba(255,255,255,0.5)';
-			ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+			// Group centre dot
+			ctx.fillStyle = 'rgba(255,255,255,0.50)';
+			ctx.beginPath(); ctx.arc(gc.x, gc.y, 2.5, 0, Math.PI * 2); ctx.fill();
 
 			// Connector line to handle
 			ctx.strokeStyle = 'rgba(255,255,255,0.15)';
 			ctx.lineWidth = 1;
-			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke();
+			ctx.beginPath(); ctx.moveTo(gc.x, gc.y); ctx.lineTo(gh.x, gh.y); ctx.stroke();
 
-			// Resize handle
+			// Single resize handle
 			ctx.strokeStyle = 'rgba(255,255,255,0.55)';
 			ctx.fillStyle   = '#111';
 			ctx.lineWidth   = 1;
-			ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+			ctx.beginPath(); ctx.arc(gh.x, gh.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
+			ctx.restore();
+
+		} else {
+			// ── Single selection: per-shape ring + handle ──
+			for (const si of selectedIdxs) {
+				if (!shapes[si]) continue;
+				const s = shapes[si];
+				const { x: cx, y: cy } = centerOf(s);
+				const { x: hx, y: hy } = handleOf(s);
+
+				ctx.save();
+				ctx.setLineDash([3, 3]);
+				ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.arc(cx, cy, s.size * HR + 6, 0, Math.PI * 2);
+				ctx.stroke();
+				ctx.setLineDash([]);
+
+				ctx.fillStyle = 'rgba(255,255,255,0.55)';
+				ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+
+				ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+				ctx.lineWidth = 1;
+				ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke();
+
+				ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+				ctx.fillStyle   = '#111';
+				ctx.lineWidth   = 1;
+				ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+				ctx.restore();
+			}
+		}
+
+		// Marquee drag-select rectangle (drawn last — always on top)
+		if (marquee) {
+			const rx = Math.min(marquee.x0, marquee.x1);
+			const ry = Math.min(marquee.y0, marquee.y1);
+			const rw = Math.abs(marquee.x1 - marquee.x0);
+			const rh = Math.abs(marquee.y1 - marquee.y0);
+			ctx.save();
+			ctx.setLineDash([3, 3]);
+			ctx.strokeStyle = 'rgba(255,255,255,0.40)';
+			ctx.fillStyle   = 'rgba(255,255,255,0.04)';
+			ctx.lineWidth   = 1;
+			ctx.strokeRect(rx, ry, rw, rh);
+			ctx.fillRect(rx, ry, rw, rh);
+			ctx.setLineDash([]);
 			ctx.restore();
 		}
 	}
@@ -385,7 +626,7 @@
 	});
 
 	$effect(() => {
-		shapes; mirrors; hatId; hatLabel; selectedIdx;
+		shapes; mirrors; hatId; hatLabel; selectedIdxs; marquee;
 		render();
 	});
 </script>
@@ -425,10 +666,17 @@
 				{#each shapes as s, i}
 					<div
 						class="hb-shape-row"
-						class:sel={selectedIdx === i}
-						onclick={() => { selectedIdx = i; }}
+						class:sel={selectedIdxs.includes(i)}
+						onclick={(e) => {
+							if (e.ctrlKey || e.metaKey) {
+								if (selectedIdxs.includes(i)) selectedIdxs = selectedIdxs.filter(x => x !== i);
+								else selectedIdxs = [...selectedIdxs, i];
+							} else {
+								selectedIdxs = [i];
+							}
+						}}
 						role="button" tabindex="0"
-						onkeydown={(e) => e.key === 'Enter' && (selectedIdx = i)}
+						onkeydown={(e) => e.key === 'Enter' && (selectedIdxs = [i])}
 					>
 						<span class="hb-shape-type">{s.type}</span>
 						<span class="hb-shape-pos">{round3(s.x)}, {round3(s.y)}</span>
@@ -464,9 +712,14 @@
 		<div class="hb-right">
 
 			<!-- Shape parameters -->
-			{#if selectedIdx !== null && shapes[selectedIdx]}
-				{@const s = shapes[selectedIdx]}
-				{@const i = selectedIdx}
+			{#if selectedIdxs.length === 0}
+				<div class="hb-section hb-no-sel">
+					<p class="hb-no-sel-text">Click a shape to edit it<br><span class="hb-no-sel-hint">ctrl+click to multi-select</span></p>
+				</div>
+			{:else if selectedIdxs.length === 1}
+				{@const s = shapes[selectedIdxs[0]]}
+				{@const i = selectedIdxs[0]}
+				{#if s}
 				<div class="hb-section">
 					<h4 class="hb-section-hdr">{s.type}</h4>
 
@@ -545,10 +798,80 @@
 						<span class="hb-hint-action">drag handle ○</span>
 					</div>
 				</div>
+				{/if}
 			{:else}
-				<div class="hb-section hb-no-sel">
-					<p class="hb-no-sel-text">Click a shape in the<br>preview to edit it</p>
+				<!-- Multi-select panel — shared controls only -->
+				{@const ref = shapes[selectedIdxs[0]]}
+				{@const allFillable = selectedIdxs.every(i => { const t = shapes[i]?.type; return t === 'circle' || t === 'arc' || t === 'rect' || t === 'triangle'; })}
+				{@const sharedType = selectedIdxs.every(i => shapes[i]?.type === ref?.type) ? ref?.type : null}
+				{#if ref}
+				<div class="hb-section">
+					<h4 class="hb-section-hdr">{selectedIdxs.length} shapes</h4>
+
+					<!-- Fill — only if every selected shape supports it -->
+					{#if allFillable}
+						{@const allFilled = selectedIdxs.every(i => (shapes[i] as {fill?: boolean}).fill ?? false)}
+						<label class="hb-field">
+							<span class="hb-label">fill</span>
+							<input type="checkbox" checked={allFilled}
+								onchange={(e) => updateShapes(selectedIdxs, { fill: (e.target as HTMLInputElement).checked })} />
+						</label>
+					{/if}
+
+					<!-- Arc: span — only if all are arcs -->
+					{#if sharedType === 'arc'}
+						{@const sp = (ref as {span?: number}).span ?? 180}
+						<label class="hb-field">
+							<span class="hb-label">span</span>
+							<input class="hb-slider" type="range" min="10" max="360" step="5"
+								value={sp}
+								onpointerdown={snap}
+								oninput={(e) => { const v = parseInt((e.target as HTMLInputElement).value); updateShapes(selectedIdxs, { span: e.shiftKey ? Math.round(v / 15) * 15 : v }); }}
+							/>
+							<span class="hb-val">{sp}°</span>
+						</label>
+					{/if}
+
+					<!-- Rect: aspect — only if all are rects -->
+					{#if sharedType === 'rect'}
+						{@const asp = (ref as {aspect?: number}).aspect ?? 1}
+						<label class="hb-field">
+							<span class="hb-label">aspect</span>
+							<input class="hb-slider" type="range" min="0.1" max="5" step="0.05"
+								value={asp}
+								onpointerdown={snap}
+								oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); updateShapes(selectedIdxs, { aspect: e.shiftKey ? Math.round(v * 2) / 2 : v }); }}
+							/>
+							<span class="hb-val">{asp.toFixed(2)}</span>
+						</label>
+					{/if}
+
+					<!-- Curve: curvature — only if all are curves -->
+					{#if sharedType === 'curve'}
+						{@const bow = (ref as {curvature?: number}).curvature ?? 0.5}
+						<label class="hb-field">
+							<span class="hb-label">bow</span>
+							<input class="hb-slider" type="range" min="-2" max="2" step="0.05"
+								value={bow}
+								onpointerdown={snap}
+								oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); updateShapes(selectedIdxs, { curvature: e.shiftKey ? Math.round(v * 4) / 4 : v }); }}
+							/>
+							<span class="hb-val">{bow.toFixed(2)}</span>
+						</label>
+					{/if}
+
+					<!-- Thickness — always shared -->
+					<label class="hb-field">
+						<span class="hb-label">width</span>
+						<input class="hb-slider" type="range" min="1" max="10" step="0.5"
+							value={(ref as {thickness?: number}).thickness ?? 1}
+							onpointerdown={snap}
+							oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); updateShapes(selectedIdxs, { thickness: e.shiftKey ? Math.round(v) : v }); }}
+						/>
+						<span class="hb-val">{(ref as {thickness?: number}).thickness ?? 1}px</span>
+					</label>
 				</div>
+				{/if}
 			{/if}
 
 			<!-- Settings -->
@@ -788,6 +1111,11 @@
 		text-align: center;
 		line-height: 1.7;
 		margin: 0;
+	}
+
+	.hb-no-sel-hint {
+		font-size: 0.58rem;
+		color: #222;
 	}
 
 	/* ── Fields ── */

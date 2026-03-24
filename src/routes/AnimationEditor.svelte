@@ -27,6 +27,7 @@
 	let offsetY = $state(0);
 	let keyframes: AnimKeyframe[] = $state([]);
 	let selectedKfIdx: number | null = $state(null);
+	let selectedKfIdxs: number[] = $state([]);
 	let scrubTime = $state(0);
 	let animId = $state('my-animation');
 	let animType: 'cyclic' | 'oneshot' = $state('cyclic');
@@ -116,20 +117,46 @@
 		}
 	}
 
-	function setKnobAngle(key: string, deg: number) {
-		const d = norm(deg);
+	/** Apply a display-angle to any joints object, returning updated joints.
+	 *  Composite joints (head, elbows, knees) are stored relative to their parent. */
+	function applyAngleToJoints(j: RequiredAngles, key: string, displayDeg: number): RequiredAngles {
+		const d = norm(displayDeg);
 		switch (key) {
-			case 'torso':     angles = { ...angles, torso:     d }; break;
-			case 'head':      angles = { ...angles, head:      norm(d - angles.torso) }; break;
-			case 'shoulderL': angles = { ...angles, shoulderL: d }; break;
-			case 'elbowL':    angles = { ...angles, elbowL:    norm(d - angles.shoulderL) }; break;
-			case 'shoulderR': angles = { ...angles, shoulderR: d }; break;
-			case 'elbowR':    angles = { ...angles, elbowR:    norm(d - angles.shoulderR) }; break;
-			case 'hipL':      angles = { ...angles, hipL:      d }; break;
-			case 'kneeL':     angles = { ...angles, kneeL:     norm(d - angles.hipL) }; break;
-			case 'hipR':      angles = { ...angles, hipR:      d }; break;
-			case 'kneeR':     angles = { ...angles, kneeR:     norm(d - angles.hipR) }; break;
+			case 'torso':     return { ...j, torso:     d };
+			case 'head':      return { ...j, head:      norm(d - j.torso) };
+			case 'shoulderL': return { ...j, shoulderL: d };
+			case 'elbowL':    return { ...j, elbowL:    norm(d - j.shoulderL) };
+			case 'shoulderR': return { ...j, shoulderR: d };
+			case 'elbowR':    return { ...j, elbowR:    norm(d - j.shoulderR) };
+			case 'hipL':      return { ...j, hipL:      d };
+			case 'kneeL':     return { ...j, kneeL:     norm(d - j.hipL) };
+			case 'hipR':      return { ...j, hipR:      d };
+			case 'kneeR':     return { ...j, kneeR:     norm(d - j.hipR) };
+			default:          return j;
 		}
+	}
+
+	function setKnobAngle(key: string, deg: number) {
+		angles = applyAngleToJoints(angles, key, deg);
+	}
+
+	/** Apply the same display angle to all secondary selected keyframes for one joint. */
+	function propagateKnobToSecondary(key: string, displayDeg: number) {
+		if (selectedKfIdxs.length <= 1 || selectedKfIdx === null) return;
+		keyframes = keyframes.map((kf, i) => {
+			if (!selectedKfIdxs.includes(i) || i === selectedKfIdx) return kf;
+			const j = { ...DEFAULT_ANGLES, ...(kf.joints ?? {}) } as RequiredAngles;
+			return { ...kf, joints: applyAngleToJoints(j, key, displayDeg) };
+		});
+	}
+
+	/** Apply the same offset to all secondary selected keyframes. */
+	function propagateOffsetToSecondary(ox: number, oy: number) {
+		if (selectedKfIdxs.length <= 1 || selectedKfIdx === null) return;
+		keyframes = keyframes.map((kf, i) => {
+			if (!selectedKfIdxs.includes(i) || i === selectedKfIdx) return kf;
+			return { ...kf, offset: { x: ox, y: oy } };
+		});
 	}
 
 	// ── Drag ──────────────────────────────────────────────────────────
@@ -160,6 +187,8 @@
 			let deg = Math.atan2(dx, dy) * 180 / Math.PI + dragTarget.angleOffset;
 			if (e.shiftKey) deg = Math.round(deg / 15) * 15;
 			setKnobAngle(dragTarget.key, deg);
+			upsertCurrentPose();
+			propagateKnobToSecondary(dragTarget.key, deg);
 		} else {
 			const { rect } = dragTarget;
 			let ox = Math.max(-20, Math.min(20, ((e.clientX - rect.left) / rect.width - 0.5) * 40));
@@ -167,9 +196,9 @@
 			if (e.shiftKey) { ox = Math.round(ox); oy = Math.round(oy); }
 			offsetX = ox;
 			offsetY = oy;
+			upsertCurrentPose();
+			propagateOffsetToSecondary(ox, oy);
 		}
-		// Auto-upsert keyframe at current scrub position on every drag move
-		upsertCurrentPose();
 	}
 
 	function onWindowMouseUp() { dragTarget = null; }
@@ -187,9 +216,20 @@
 		if (existing >= 0) {
 			keyframes = keyframes.map((k, i) => i === existing ? kf : k);
 			selectedKfIdx = existing;
+			// Ensure primary is in the multi-select
+			if (!selectedKfIdxs.includes(existing)) selectedKfIdxs = [existing, ...selectedKfIdxs];
 		} else {
+			// Save selected timestamps before sort changes indices
+			const selectedTs = selectedKfIdxs.map(i => keyframes[i]?.t).filter(t => t !== undefined) as number[];
 			keyframes = [...keyframes, kf].sort((a, b) => a.t - b.t);
 			selectedKfIdx = keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.01);
+			// Re-find previously selected keyframes by their t values
+			const reFound = selectedTs
+				.map(t => keyframes.findIndex(k => Math.abs(k.t - t) < 0.01))
+				.filter(i => i >= 0);
+			selectedKfIdxs = selectedKfIdx !== null && !reFound.includes(selectedKfIdx)
+				? [selectedKfIdx, ...reFound]
+				: reFound.length > 0 ? reFound : (selectedKfIdx !== null ? [selectedKfIdx] : []);
 		}
 	}
 
@@ -198,13 +238,15 @@
 
 	function deleteKeyframe() {
 		snap();
-		if (selectedKfIdx === null) return;
-		keyframes = keyframes.filter((_, i) => i !== selectedKfIdx);
+		if (selectedKfIdxs.length === 0) return;
+		keyframes = keyframes.filter((_, i) => !selectedKfIdxs.includes(i));
+		selectedKfIdxs = [];
 		selectedKfIdx = null;
 	}
 
 	function selectKeyframe(idx: number) {
 		selectedKfIdx = idx;
+		selectedKfIdxs = [idx];
 		const kf = keyframes[idx];
 		scrubTime = kf.t;
 		if (kf.joints) angles = { ...DEFAULT_ANGLES, ...kf.joints } as RequiredAngles;
@@ -214,8 +256,8 @@
 
 	function updateSelectedEasing(easing: EasingType) {
 		snap();
-		if (selectedKfIdx === null) return;
-		keyframes = keyframes.map((k, i) => i === selectedKfIdx ? { ...k, easing } : k);
+		if (selectedKfIdxs.length === 0) return;
+		keyframes = keyframes.map((k, i) => selectedKfIdxs.includes(i) ? { ...k, easing } : k);
 	}
 
 	// ── Presets ───────────────────────────────────────────────────────
@@ -229,7 +271,7 @@
 			joints: { ...kf.joints },
 			offset: kf.offset ? { ...kf.offset } : undefined
 		}));
-		selectedKfIdx = null; scrubTime = 0;
+		selectedKfIdx = null; selectedKfIdxs = []; scrubTime = 0;
 		if (keyframes.length > 0) selectKeyframe(0);
 	}
 
@@ -470,6 +512,7 @@
 	{@const dotX = 26 + Math.sin(rad) * 18}
 	{@const dotY = 26 + Math.cos(rad) * 18}
 	{@const active = dragTarget?.type === 'knob' && dragTarget.key === key}
+	{@const multi = selectedKfIdxs.length > 1}
 	<div
 		class="ae-knob"
 		class:active
@@ -483,10 +526,10 @@
 			<circle cx="26" cy="26" r="21" fill="none" stroke={active ? '#383838' : '#1e1e1e'} stroke-width="1.5"/>
 			<line x1="26" y1="45" x2="26" y2="47" stroke="#2a2a2a" stroke-width="1"/>
 			<line x1="26" y1="26" x2={dotX} y2={dotY}
-				stroke="hsl(190,50%,30%)" stroke-width="1.5" stroke-linecap="round"/>
+				stroke={multi ? 'hsl(38,70%,35%)' : 'hsl(190,50%,30%)'} stroke-width="1.5" stroke-linecap="round"/>
 			<circle cx="26" cy="26" r="2" fill="#2e2e2e"/>
 			<circle cx={dotX} cy={dotY} r="4"
-				fill={active ? 'hsl(190,80%,70%)' : 'hsl(190,65%,52%)'}/>
+				fill={active ? (multi ? 'hsl(38,95%,72%)' : 'hsl(190,80%,70%)') : (multi ? 'hsl(38,88%,55%)' : 'hsl(190,65%,52%)')}/>
 		</svg>
 		<span class="ae-knob-lbl">{label}</span>
 		<span class="ae-knob-val">{Math.round(abs)}°</span>
@@ -497,6 +540,7 @@
 	{@const px = 26 + Math.max(-17, Math.min(17, (offsetX / 20) * 17))}
 	{@const py = 26 - Math.max(-17, Math.min(17, (offsetY / 12) * 17))}
 	{@const active = dragTarget?.type === 'offset'}
+	{@const multi = selectedKfIdxs.length > 1}
 	<div
 		class="ae-knob"
 		class:active
@@ -512,7 +556,7 @@
 			<line x1="8" y1="26" x2="44" y2="26" stroke="#1e1e1e" stroke-width="1"/>
 			<circle cx="26" cy="26" r="1.5" fill="#2a2a2a"/>
 			<circle cx={px} cy={py} r="4"
-				fill={active ? 'hsl(190,80%,70%)' : 'hsl(190,65%,52%)'}/>
+				fill={active ? (multi ? 'hsl(38,95%,72%)' : 'hsl(190,80%,70%)') : (multi ? 'hsl(38,88%,55%)' : 'hsl(190,65%,52%)')}/>
 		</svg>
 		<span class="ae-knob-lbl">OFFSET</span>
 		<span class="ae-knob-val">{round1(offsetX)},{round1(offsetY)}</span>
@@ -615,34 +659,47 @@
 					aria-valuenow={scrubTime}
 				>
 					<div class="ae-tl-head" style="left: {scrubTime * 100}%"></div>
-					{#each keyframes as kf, i}
-						<div
-							class="ae-kf-marker"
-							class:sel={selectedKfIdx === i}
-							style="left: {kf.t * 100}%"
-							onclick={(e) => { e.stopPropagation(); selectKeyframe(i); }}
-							role="button" tabindex="0" aria-label="Keyframe at {kf.t}"
-							onkeydown={(e) => e.key === 'Enter' && selectKeyframe(i)}
-						></div>
-					{/each}
+				{#each keyframes as kf, i}
+					<div
+						class="ae-kf-marker"
+						class:sel={selectedKfIdxs.includes(i)}
+						class:multi={selectedKfIdxs.length > 1 && selectedKfIdxs.includes(i)}
+						style="left: {kf.t * 100}%"
+						onclick={(e) => {
+							e.stopPropagation();
+							if (e.ctrlKey || e.metaKey) {
+								// Toggle in multi-select without loading pose
+								if (selectedKfIdxs.includes(i)) {
+									selectedKfIdxs = selectedKfIdxs.filter(x => x !== i);
+								} else {
+									selectedKfIdxs = [...selectedKfIdxs, i];
+								}
+							} else {
+								selectKeyframe(i);
+							}
+						}}
+						role="button" tabindex="0" aria-label="Keyframe at {kf.t}"
+						onkeydown={(e) => e.key === 'Enter' && selectKeyframe(i)}
+					></div>
+				{/each}
 				</div>
 
 				<div class="ae-tl-actions">
 					<button class="ae-btn" onclick={addKeyframeManual}>+ keyframe</button>
-					<button class="ae-btn ae-btn-danger" onclick={deleteKeyframe} disabled={selectedKfIdx === null}>
-						delete
-					</button>
-					{#if selectedKfIdx !== null}
-						<select
-							class="ae-sel"
-							value={keyframes[selectedKfIdx]?.easing ?? 'linear'}
-							onchange={(e) => updateSelectedEasing((e.target as HTMLSelectElement).value as EasingType)}
-						>
-							{#each EASINGS as e}
-								<option value={e}>{e}</option>
-							{/each}
-						</select>
-					{/if}
+				<button class="ae-btn ae-btn-danger" onclick={deleteKeyframe} disabled={selectedKfIdxs.length === 0}>
+					delete
+				</button>
+				{#if selectedKfIdxs.length > 0}
+					<select
+						class="ae-sel"
+						value={keyframes[selectedKfIdx ?? selectedKfIdxs[0]]?.easing ?? 'linear'}
+						onchange={(e) => updateSelectedEasing((e.target as HTMLSelectElement).value as EasingType)}
+					>
+						{#each EASINGS as e}
+							<option value={e}>{e}</option>
+						{/each}
+					</select>
+				{/if}
 					<div class="ae-tl-spacer"></div>
 					<button class="ae-btn" onclick={doUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">undo</button>
 					<button class="ae-btn" onclick={doRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">redo</button>
@@ -662,8 +719,13 @@
 		<!-- ── RIGHT: knobs + settings + presets ─────────────────────── -->
 		<div class="ae-right">
 
-			<!-- Skeleton knob grid -->
-			<div class="ae-skel">
+		<!-- Multi-keyframe selection banner -->
+		{#if selectedKfIdxs.length > 1}
+			<div class="ae-multi-lbl">{selectedKfIdxs.length} keyframes selected</div>
+		{/if}
+
+		<!-- Skeleton knob grid -->
+		<div class="ae-skel">
 				<div class="ae-skel-row">
 					<div></div>
 					{@render knob('head', 'HEAD')}
@@ -896,7 +958,8 @@
 		cursor: crosshair;
 		transition: background 0.1s, border-color 0.1s;
 	}
-	.ae-kf-marker.sel { background: hsl(190, 65%, 45%); border-color: hsl(190, 75%, 65%); }
+	.ae-kf-marker.sel       { background: hsl(190, 65%, 45%); border-color: hsl(190, 75%, 65%); }
+	.ae-kf-marker.sel.multi { background: hsl(38, 88%, 50%);  border-color: hsl(38, 95%, 68%); }
 
 	.ae-tl-actions {
 		display: flex;
@@ -1022,8 +1085,18 @@
 		border-radius: 5px;
 		transition: background 0.1s;
 	}
-	.ae-knob:hover { background: rgba(255,255,255,0.02); }
+	.ae-knob:hover  { background: rgba(255,255,255,0.02); }
 	.ae-knob.active { background: rgba(255,255,255,0.035); }
+
+	.ae-multi-lbl {
+		font-size: 0.52rem;
+		color: hsl(38, 80%, 52%);
+		text-align: center;
+		padding: 0.5rem 0 0;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		flex-shrink: 0;
+	}
 
 	.ae-knob-svg { width: 52px; height: 52px; display: block; }
 
