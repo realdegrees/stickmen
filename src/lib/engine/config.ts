@@ -80,6 +80,13 @@ export interface NavGridConfig {
 	/** Extra A* cost per intermediate surface layer a rope edge must cross (default: 150) */
 	ropeLayerPenalty: number;
 	/**
+	 * Delay in ms for the fixed-window rebuild buffer. When a DOM or resize change
+	 * is detected, the navgrid rebuild is scheduled after this many ms. Further
+	 * changes within the window are absorbed without resetting the timer.
+	 * (default: 50)
+	 */
+	rebuildDebounceMs: number;
+	/**
 	 * Min distance from container top in px for a surface to be walkable.
 	 * Auto-computed as stickmanMaxHeight + headRadius if not set.
 	 */
@@ -219,7 +226,8 @@ export const DEFAULT_CONFIG: StickmenConfig = {
 		jumpConnectionSegments: 4,
 		surfaceMergeGap: 15,
 		surfaceMergeYTolerance: 2,
-		ropeLayerPenalty: 150
+		ropeLayerPenalty: 150,
+		rebuildDebounceMs: 50
 		// topMargin, jumpMaxDy, tallElementThreshold, ropeHorizontalMargin are derived
 	},
 	physics: {

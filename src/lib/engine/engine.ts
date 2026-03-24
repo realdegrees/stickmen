@@ -218,11 +218,12 @@ export class StickmenEngine {
 	}
 
 	private scheduleRebuild(): void {
-		if (this.rebuildTimeout) clearTimeout(this.rebuildTimeout);
+		if (this.rebuildTimeout) return;
 		this.rebuildTimeout = setTimeout(() => {
+			this.rebuildTimeout = null;
 			this.resizeCanvas();
 			this.rebuildGrid();
-		}, 200);
+		}, this._config.navgrid.rebuildDebounceMs);
 	}
 
 	// ── Registration ─────────────────────────────────────────────────
