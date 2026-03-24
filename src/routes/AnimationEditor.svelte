@@ -86,7 +86,7 @@
 	}
 
 	type DragTarget =
-		| { type: 'knob'; key: string; cx: number; cy: number }
+		| { type: 'knob'; key: string; cx: number; cy: number; angleOffset: number }
 		| { type: 'offset'; rect: DOMRect };
 	let dragTarget: DragTarget | null = $state(null);
 
@@ -138,7 +138,12 @@
 		e.preventDefault();
 		snap(); // snapshot before drag auto-upserts keyframes
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		dragTarget = { type: 'knob', key, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+		const cx = rect.left + rect.width / 2;
+		const cy = rect.top + rect.height / 2;
+		// Compute grab offset so the knob doesn't snap on first drag frame
+		const grabAngle = Math.atan2(e.clientX - cx, e.clientY - cy) * 180 / Math.PI;
+		const angleOffset = displayAngle(key) - grabAngle;
+		dragTarget = { type: 'knob', key, cx, cy, angleOffset };
 	}
 
 	function onOffsetMouseDown(e: MouseEvent) {
@@ -152,7 +157,7 @@
 		if (dragTarget.type === 'knob') {
 			const dx = e.clientX - dragTarget.cx;
 			const dy = e.clientY - dragTarget.cy;
-			let deg = Math.atan2(dx, dy) * 180 / Math.PI;
+			let deg = Math.atan2(dx, dy) * 180 / Math.PI + dragTarget.angleOffset;
 			if (e.shiftKey) deg = Math.round(deg / 15) * 15;
 			setKnobAngle(dragTarget.key, deg);
 		} else {
