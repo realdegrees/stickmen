@@ -46,6 +46,9 @@
 	let loopRafId = 0;
 	let loopLastTime = 0;
 
+	// LOOP canvas reference animation ('' = show current edit)
+	let loopRef = $state('');
+
 	type DragTarget =
 		| { type: 'knob'; key: string; cx: number; cy: number }
 		| { type: 'offset'; rect: DOMRect };
@@ -268,15 +271,34 @@
 		return keyframes[keyframes.length - 1];
 	}
 
+	/** Returns the index of the prev/next keyframe for click-to-select. */
+	function getPrevKfIdx(): number | null {
+		if (!keyframes.length) return null;
+		let bestIdx = 0;
+		for (let i = 0; i < keyframes.length; i++) {
+			if (keyframes[i].t <= scrubTime) bestIdx = i;
+		}
+		return bestIdx;
+	}
+
+	function getNextKfIdx(): number | null {
+		if (!keyframes.length) return null;
+		for (let i = 0; i < keyframes.length; i++) {
+			if (keyframes[i].t > scrubTime) return i;
+		}
+		return keyframes.length - 1;
+	}
+
 	// Renders the LOOP canvas only (called by independent RAF)
 	function renderLoopCanvas() {
 		if (!canvasLoop) return;
 		const ctx = canvasLoop.getContext('2d')!;
 		bgMini(ctx);
-		if (keyframes.length >= 1) {
-			const { angles: a, offsetX: ox, offsetY: oy } = resolveAnglesAtTime(
-				keyframes, loopPhase, animType === 'cyclic'
-			);
+		const ref = loopRef ? DefaultAnimations[loopRef as keyof typeof DefaultAnimations] : null;
+		const kfs = ref ? ref.keyframes : keyframes;
+		const type = ref ? ref.type : animType;
+		if (kfs.length >= 1) {
+			const { angles: a, offsetX: ox, offsetY: oy } = resolveAnglesAtTime(kfs, loopPhase, type === 'cyclic');
 			drawFig(ctx, poseFrom(a, ox, oy));
 		} else {
 			drawFig(ctx, poseFrom(DEFAULT_ANGLES, 0, 0), 0.2);
@@ -347,7 +369,9 @@
 		loopLastTime = performance.now();
 		function tick(now: number) {
 			const dt = (now - loopLastTime) / 1000; loopLastTime = now;
-			loopPhase = (loopPhase + dt / (frameCount / 36)) % 1;
+			const ref = loopRef ? DefaultAnimations[loopRef as keyof typeof DefaultAnimations] : null;
+			const fc = ref ? ref.frameCount : frameCount;
+			loopPhase = (loopPhase + dt / (fc / 36)) % 1;
 			renderLoopCanvas();
 			loopRafId = requestAnimationFrame(tick);
 		}
@@ -449,19 +473,44 @@
 
 			<!-- 4-figure preview row -->
 			<div class="ae-preview">
+				<!-- LOOP: always playing; select picks reference animation -->
 				<div class="ae-fig">
 					<canvas bind:this={canvasLoop}></canvas>
-					<span class="ae-fig-lbl">LOOP</span>
+					<select class="ae-loop-ref" bind:value={loopRef}>
+						<option value="">LOOP</option>
+						{#each Object.keys(DefaultAnimations) as key}
+							<option value={key}>{key}</option>
+						{/each}
+					</select>
 				</div>
-				<div class="ae-fig ae-fig-dim">
+				<!-- PREV KF: click to select that keyframe -->
+				<div
+					class="ae-fig ae-fig-dim"
+					class:ae-fig-selectable={keyframes.length > 0}
+					onclick={() => { const idx = getPrevKfIdx(); if (idx !== null) selectKeyframe(idx); }}
+					role="button"
+					tabindex={keyframes.length > 0 ? 0 : -1}
+					aria-label="Select previous keyframe"
+					onkeydown={(e) => { if (e.key === 'Enter') { const idx = getPrevKfIdx(); if (idx !== null) selectKeyframe(idx); } }}
+				>
 					<canvas bind:this={canvasPrev}></canvas>
 					<span class="ae-fig-lbl" style="color: hsl(38,60%,40%)">PREV KF</span>
 				</div>
+				<!-- CURRENT: live pose -->
 				<div class="ae-fig ae-fig-active">
 					<canvas bind:this={canvasCurrent}></canvas>
 					<span class="ae-fig-lbl" style="color: hsl(190,60%,45%)">CURRENT</span>
 				</div>
-				<div class="ae-fig ae-fig-dim">
+				<!-- NEXT KF: click to select that keyframe -->
+				<div
+					class="ae-fig ae-fig-dim"
+					class:ae-fig-selectable={keyframes.length > 0}
+					onclick={() => { const idx = getNextKfIdx(); if (idx !== null) selectKeyframe(idx); }}
+					role="button"
+					tabindex={keyframes.length > 0 ? 0 : -1}
+					aria-label="Select next keyframe"
+					onkeydown={(e) => { if (e.key === 'Enter') { const idx = getNextKfIdx(); if (idx !== null) selectKeyframe(idx); } }}
+				>
 					<canvas bind:this={canvasNext}></canvas>
 					<span class="ae-fig-lbl" style="color: hsl(220,60%,52%)">NEXT KF</span>
 				</div>
@@ -679,6 +728,32 @@
 	.ae-fig.ae-fig-dim canvas {
 		opacity: 0.85;
 	}
+
+	.ae-fig-selectable {
+		cursor: pointer;
+		border-radius: 4px;
+		transition: background 0.12s;
+	}
+	.ae-fig-selectable:hover { background: rgba(255,255,255,0.025); }
+	.ae-fig-selectable:hover canvas { border-color: #2a2a2a; }
+
+	.ae-loop-ref {
+		width: 100%;
+		background: transparent;
+		border: none;
+		border-top: 1px solid #1c1c1c;
+		color: #363636;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.47rem;
+		padding: 0.18rem 0;
+		text-align: center;
+		cursor: pointer;
+		letter-spacing: 0.06em;
+		appearance: none;
+		-webkit-appearance: none;
+	}
+	.ae-loop-ref:focus { outline: none; color: #666; }
+	.ae-loop-ref option { background: #111; color: #888; }
 
 	.ae-fig-lbl {
 		font-size: 0.52rem;

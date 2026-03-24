@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { StickmenStage, Behaviours, type StickmanHandle } from '$lib/index.js';
 	import AnimationEditor from './AnimationEditor.svelte';
+	import HatBuilder from './HatBuilder.svelte';
 
 	// ── Stage refs ───────────────────────────────────────────────────
 	let walkStage: ReturnType<typeof StickmenStage>;
@@ -285,6 +286,12 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		<h2 class="editor-heading">Animation Editor</h2>
 		<p class="editor-sub">Author keyframe animations and copy the generated code.</p>
 		<AnimationEditor />
+	</section>
+
+	<section id="hat-builder" class="editor-section">
+		<h2 class="editor-heading">Hat Builder</h2>
+		<p class="editor-sub">Compose custom hat accessories from shape primitives and copy the generated code.</p>
+		<HatBuilder />
 	</section>
 </div>
 
