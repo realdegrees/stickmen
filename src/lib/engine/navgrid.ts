@@ -295,10 +295,12 @@ export class NavGrid {
 			let hasBottom: boolean;
 
 			// Allow per-element edge control via attribute value:
-			//   data-walkable        → default (top always, bottom if border)
-			//   data-walkable="top"   → top edge only
-			//   data-walkable="bottom"→ bottom edge only
+			//   data-walkable          → default (top always, bottom if border)
+			//   data-walkable="top"    → top edge only
+			//   data-walkable="bottom" → bottom edge only
+			//   data-walkable="false"  → explicitly excluded (overrides selector match)
 			const walkableValue = (el as HTMLElement).dataset?.walkable;
+			if (walkableValue === 'false') continue;
 			const explicitEdge = walkableValue === 'top' || walkableValue === 'bottom';
 
 			if (explicitEdge) {

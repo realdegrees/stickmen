@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"build:package": "svelte-kit sync && svelte-package -o dist",
+		"build:package": "svelte-kit sync && svelte-package -o dist && node -e \"const fs=require('fs');const f='dist/index.d.ts';fs.writeFileSync(f,'/// <reference path=\\\"./html-augment.d.ts\\\" />\\n'+fs.readFileSync(f,'utf8'))\"",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"prepublishOnly": "bun run build:package"

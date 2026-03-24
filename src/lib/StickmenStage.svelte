@@ -25,6 +25,8 @@
 		hats?: HatDef[];
 		postProcess?: PostProcessFn;
 		proximityThreshold?: number;
+		canvasZ?: number;
+		onready?: (api: { spawn: typeof spawn; getAll: typeof getAll; clear: typeof clear; rebuild: typeof rebuild }) => void;
 		children?: Snippet;
 		class?: string;
 	}
@@ -38,6 +40,8 @@
 		hats = undefined,
 		postProcess = undefined,
 		proximityThreshold = 60,
+		canvasZ = 9999,
+		onready = undefined,
 		children,
 		class: className = ''
 	}: Props = $props();
@@ -138,6 +142,7 @@
 
 		engine.init(containerEl, canvasEl);
 		engine.setDebug(debug);
+		onready?.({ spawn, getAll, clear, rebuild });
 
 		return () => {
 			clear();
@@ -154,7 +159,8 @@
 >
 	<canvas
 		bind:this={canvasEl}
-		style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 9999;"
+		style:z-index={canvasZ}
+		style="position: absolute; top: 0; left: 0; pointer-events: none;"
 	></canvas>
 	{#if children}
 		{@render children()}

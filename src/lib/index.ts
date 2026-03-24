@@ -40,8 +40,9 @@ export { COLOR_PRESETS, resolveColor, colorToHSL } from './engine/types.js';
 
 // ── Animation System ─────────────────────────────────────────────────
 export type { AnimationResolver, AnimationContext, KeyframeAnimationDef, AnimKeyframe, JointAngles, EasingType } from './engine/animations/types.js';
-export { createKeyframeAnimation, createProceduralAnimation } from './engine/animations/resolver.js';
+export { createKeyframeAnimation, anglesToPose, resolveAnglesAtTime } from './engine/animations/resolver.js';
 export { AnimationRegistry } from './engine/animations/registry.js';
+export { DefaultAnimations } from './engine/animations/defaults.js';
 
 // ── Hat System ───────────────────────────────────────────────────────
 export type { HatDef } from './engine/hats.js';

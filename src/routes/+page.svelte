@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { StickmenStage, Behaviours, type StickmanHandle } from '$lib/index.js';
+	import AnimationEditor from './AnimationEditor.svelte';
 
 	// ── Stage refs ───────────────────────────────────────────────────
 	let walkStage: ReturnType<typeof StickmenStage>;
@@ -276,6 +277,14 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 				</div>
 			</div>
 		</StickmenStage>
+	</section>
+
+	<!-- ── Animation Editor ──────────────────────────────────────── -->
+
+	<section id="animation-editor" class="editor-section">
+		<h2 class="editor-heading">Animation Editor</h2>
+		<p class="editor-sub">Author keyframe animations and copy the generated code.</p>
+		<AnimationEditor />
 	</section>
 </div>
 
@@ -646,6 +655,27 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		grid-template-columns: repeat(3, 1fr);
 		gap: 1rem;
 		padding: 0 1.5rem 1.5rem;
+	}
+
+	/* ── Animation editor section ───────────────────────────────── */
+
+	.editor-section {
+		margin-top: 3rem;
+		margin-bottom: 2rem;
+	}
+
+	.editor-heading {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 1.1rem;
+		font-weight: 500;
+		color: #ccc;
+		margin: 0 0 0.35rem;
+	}
+
+	.editor-sub {
+		color: #555;
+		font-size: 0.85rem;
+		margin: 0 0 1.25rem;
 	}
 
 	/* ── Responsive ──────────────────────────────────────────────── */

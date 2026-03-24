@@ -38,39 +38,41 @@ export interface AnimationResolver {
 export type EasingType = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'step';
 
 /**
- * Joint angles in radians, relative to parent joint in the hierarchy.
- * Positive angles rotate clockwise (toward positive X when parent points down).
+ * Joint angles in DEGREES.
+ * 0° = pointing straight down from the parent joint.
+ * Positive angles rotate clockwise (right), negative counter-clockwise (left).
+ * 180° / -180° = pointing straight up.
  *
  * Hierarchy:
  *   root (feet position)
  *     └─ hip
- *         ├─ torso (lean angle from vertical)
- *         │   ├─ head (tilt relative to neck)
- *         │   ├─ shoulderL → elbowL
+ *         ├─ torso (lean from vertical)
+ *         │   ├─ head (tilt relative to neck direction)
+ *         │   ├─ shoulderL → elbowL  (elbowL is additional bend, added to shoulderL)
  *         │   └─ shoulderR → elbowR
- *         ├─ hipL → kneeL
+ *         ├─ hipL → kneeL            (kneeL is additional bend, added to hipL)
  *         └─ hipR → kneeR
  */
 export interface JointAngles {
-	/** Torso lean from vertical (positive = lean right/forward) */
+	/** Torso lean from vertical in degrees */
 	torso?: number;
-	/** Head tilt relative to neck */
+	/** Head tilt in degrees */
 	head?: number;
-	/** Left arm swing from shoulder */
+	/** Left shoulder angle in degrees */
 	shoulderL?: number;
-	/** Left forearm bend */
+	/** Left elbow additional bend in degrees */
 	elbowL?: number;
-	/** Right arm swing from shoulder */
+	/** Right shoulder angle in degrees */
 	shoulderR?: number;
-	/** Right forearm bend */
+	/** Right elbow additional bend in degrees */
 	elbowR?: number;
-	/** Left leg swing from hip */
+	/** Left hip angle in degrees */
 	hipL?: number;
-	/** Left knee bend */
+	/** Left knee additional bend in degrees */
 	kneeL?: number;
-	/** Right leg swing from hip */
+	/** Right hip angle in degrees */
 	hipR?: number;
-	/** Right knee bend */
+	/** Right knee additional bend in degrees */
 	kneeR?: number;
 }
 
