@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { DefaultHatDefs, createHat } from '$lib/index.js';
 	import type { HatShape, HatLayerDef } from '$lib/index.js';
+	import { createHistory } from '$lib/history.js';
 
 	// ── Canvas constants ───────────────────────────────────────────────
 	const CW = 200, CH = 200;
@@ -35,6 +36,38 @@
 	let addType: ShapeType = $state('arc');
 	let canvas: HTMLCanvasElement;
 	let canvasCursor = $state('crosshair');
+
+	// ── Undo / Redo ────────────────────────────────────────────────────
+
+	let canUndo = $state(false);
+	let canRedo = $state(false);
+
+	const history = createHistory(
+		() => ({
+			shapes:  shapes.map(s => ({ ...s }) as HatShape),
+			mirrors: [...mirrors],
+			hatId, hatLabel
+		}),
+		(snap) => {
+			shapes   = snap.shapes;
+			mirrors  = snap.mirrors;
+			hatId    = snap.hatId;
+			hatLabel = snap.hatLabel;
+		}
+	);
+
+	function snap() { history.snapshot(); syncHistory(); }
+	function doUndo() { history.undo(); syncHistory(); }
+	function doRedo() { history.redo(); syncHistory(); }
+	function syncHistory() { canUndo = history.canUndo(); canRedo = history.canRedo(); }
+
+	function onKeyDown(e: KeyboardEvent) {
+		if (document.activeElement instanceof HTMLInputElement) return;
+		const mod = e.ctrlKey || e.metaKey;
+		if (!mod) return;
+		if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
+		if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); doRedo(); }
+	}
 
 	// Drag state — plain vars (no reactivity; we mutate shapes[] to trigger re-render)
 	type DragState = {
@@ -101,6 +134,7 @@
 
 		const hit = hitTest(mx, my);
 		if (hit) {
+			snap(); // snapshot before any drag mutates shapes
 			selectedIdx = hit.idx;
 			const s = shapes[hit.idx];
 			const c = centerOf(s);
@@ -173,12 +207,14 @@
 	// ── Shape management ───────────────────────────────────────────────
 
 	function addShape() {
+		snap();
 		shapes  = [...shapes,  { ...SHAPE_DEFAULTS[addType] } as HatShape];
 		mirrors = [...mirrors, false];
 		selectedIdx = shapes.length - 1;
 	}
 
 	function deleteShapeAt(idx: number) {
+		snap();
 		shapes  = shapes.filter((_, i)  => i !== idx);
 		mirrors = mirrors.filter((_, i) => i !== idx);
 		if (selectedIdx === idx) {
@@ -189,6 +225,7 @@
 	}
 
 	function toggleMirror(idx: number) {
+		snap();
 		mirrors = mirrors.map((m, i) => i === idx ? !m : m);
 	}
 
@@ -199,6 +236,7 @@
 	// ── Presets ────────────────────────────────────────────────────────
 
 	function loadPreset(key: string) {
+		snap();
 		const def = DefaultHatDefs[key];
 		if (!def) return;
 		hatId = def.id; hatLabel = def.label;
@@ -342,7 +380,7 @@
 	});
 </script>
 
-<svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} />
+<svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} onkeydown={onKeyDown} />
 
 <div class="hb">
 	<div class="hb-layout">
@@ -367,6 +405,9 @@
 						{#each SHAPE_TYPES as t}<option value={t}>{t}</option>{/each}
 					</select>
 					<button class="hb-btn" onclick={addShape}>+</button>
+					<div class="hb-divider"></div>
+					<button class="hb-btn" onclick={doUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">undo</button>
+					<button class="hb-btn" onclick={doRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">redo</button>
 				</div>
 			</div>
 
@@ -436,6 +477,7 @@
 							<span class="hb-label">span</span>
 							<input class="hb-slider" type="range" min="10" max="360" step="5"
 								value={sp}
+								onpointerdown={snap}
 								oninput={(e) => updateShape(i, { span: parseInt((e.target as HTMLInputElement).value) })}
 							/>
 							<span class="hb-val">{sp}°</span>
@@ -449,6 +491,7 @@
 							<span class="hb-label">aspect</span>
 							<input class="hb-slider" type="range" min="0.1" max="5" step="0.05"
 								value={asp}
+								onpointerdown={snap}
 								oninput={(e) => updateShape(i, { aspect: parseFloat((e.target as HTMLInputElement).value) })}
 							/>
 							<span class="hb-val">{asp.toFixed(2)}</span>
@@ -462,6 +505,7 @@
 							<span class="hb-label">bow</span>
 							<input class="hb-slider" type="range" min="-2" max="2" step="0.05"
 								value={bow}
+								onpointerdown={snap}
 								oninput={(e) => updateShape(i, { curvature: parseFloat((e.target as HTMLInputElement).value) })}
 							/>
 							<span class="hb-val">{bow.toFixed(2)}</span>
@@ -570,6 +614,13 @@
 		display: flex;
 		gap: 0.3rem;
 		align-items: center;
+	}
+
+	.hb-divider {
+		width: 1px;
+		height: 12px;
+		background: #222;
+		margin: 0 0.1rem;
 	}
 
 	.hb-micro-lbl {

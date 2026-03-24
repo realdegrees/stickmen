@@ -4,6 +4,7 @@
 	import { anglesToPose, resolveAnglesAtTime } from '$lib/engine/animations/resolver.js';
 	import { BASE_BODY, BONES } from '$lib/engine/types.js';
 	import type { AnimKeyframe, JointAngles, EasingType, Pose } from '$lib/index.js';
+	import { createHistory } from '$lib/history.js';
 
 	// ── Types ─────────────────────────────────────────────────────────
 
@@ -48,6 +49,41 @@
 
 	// LOOP canvas reference animation ('' = show current edit)
 	let loopRef = $state('');
+
+	// ── Undo / Redo ────────────────────────────────────────────────────
+
+	let canUndo = $state(false);
+	let canRedo = $state(false);
+
+	const history = createHistory(
+		() => ({
+			keyframes: keyframes.map(kf => ({
+				...kf,
+				joints: kf.joints ? { ...kf.joints } : undefined,
+				offset: kf.offset ? { ...kf.offset } : undefined
+			})),
+			animId, animType, frameCount
+		}),
+		(snap) => {
+			keyframes  = snap.keyframes;
+			animId     = snap.animId;
+			animType   = snap.animType;
+			frameCount = snap.frameCount;
+		}
+	);
+
+	function snap() { history.snapshot(); syncHistory(); }
+	function doUndo() { history.undo(); syncHistory(); }
+	function doRedo() { history.redo(); syncHistory(); }
+	function syncHistory() { canUndo = history.canUndo(); canRedo = history.canRedo(); }
+
+	function onKeyDown(e: KeyboardEvent) {
+		if (document.activeElement instanceof HTMLInputElement) return;
+		const mod = e.ctrlKey || e.metaKey;
+		if (!mod) return;
+		if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
+		if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); doRedo(); }
+	}
 
 	type DragTarget =
 		| { type: 'knob'; key: string; cx: number; cy: number }
@@ -100,12 +136,14 @@
 
 	function onKnobMouseDown(e: MouseEvent, key: string) {
 		e.preventDefault();
+		snap(); // snapshot before drag auto-upserts keyframes
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		dragTarget = { type: 'knob', key, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
 	}
 
 	function onOffsetMouseDown(e: MouseEvent) {
 		e.preventDefault();
+		snap();
 		dragTarget = { type: 'offset', rect: (e.currentTarget as HTMLElement).getBoundingClientRect() };
 	}
 
@@ -145,7 +183,11 @@
 		}
 	}
 
+	/** Called by the + keyframe button — snapshots first. Drag auto-upsert skips this. */
+	function addKeyframeManual() { snap(); upsertCurrentPose(); }
+
 	function deleteKeyframe() {
+		snap();
 		if (selectedKfIdx === null) return;
 		keyframes = keyframes.filter((_, i) => i !== selectedKfIdx);
 		selectedKfIdx = null;
@@ -161,6 +203,7 @@
 	}
 
 	function updateSelectedEasing(easing: EasingType) {
+		snap();
 		if (selectedKfIdx === null) return;
 		keyframes = keyframes.map((k, i) => i === selectedKfIdx ? { ...k, easing } : k);
 	}
@@ -168,6 +211,7 @@
 	// ── Presets ───────────────────────────────────────────────────────
 
 	function loadPreset(key: keyof typeof DefaultAnimations) {
+		snap();
 		const def = DefaultAnimations[key];
 		animId = def.id; animType = def.type; frameCount = def.frameCount;
 		keyframes = def.keyframes.map(kf => ({
@@ -408,7 +452,7 @@
 	});
 </script>
 
-<svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} />
+<svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} onkeydown={onKeyDown} />
 
 {#snippet knob(key: string, label: string)}
 	{@const abs = displayAngle(key)}
@@ -574,7 +618,7 @@
 				</div>
 
 				<div class="ae-tl-actions">
-					<button class="ae-btn" onclick={upsertCurrentPose}>+ keyframe</button>
+					<button class="ae-btn" onclick={addKeyframeManual}>+ keyframe</button>
 					<button class="ae-btn ae-btn-danger" onclick={deleteKeyframe} disabled={selectedKfIdx === null}>
 						delete
 					</button>
@@ -589,6 +633,9 @@
 							{/each}
 						</select>
 					{/if}
+					<div class="ae-tl-spacer"></div>
+					<button class="ae-btn" onclick={doUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">undo</button>
+					<button class="ae-btn" onclick={doRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">redo</button>
 				</div>
 			</div>
 
@@ -846,6 +893,8 @@
 		gap: 0.45rem;
 		align-items: center;
 	}
+
+	.ae-tl-spacer { flex: 1; }
 
 	.ae-btn {
 		background: none;
