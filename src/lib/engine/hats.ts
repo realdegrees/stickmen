@@ -96,6 +96,19 @@ export interface HatLayerDef {
   shapes: HatShape[];
 }
 
+// ── Shape utilities ──────────────────────────────────────────────────
+
+/**
+ * Returns a horizontally mirrored copy of a shape (negates x and angle).
+ * Used to bake mirror-flagged shapes into the final shape list for export/rendering.
+ */
+export function mirrorHatShape(s: HatShape): HatShape {
+  const angle = (s as { angle?: number }).angle ?? 0;
+  const m = { ...s, x: -s.x } as HatShape;
+  if (s.type !== 'circle') (m as { angle?: number }).angle = -angle;
+  return m;
+}
+
 // ── Shape drawing ────────────────────────────────────────────────────
 
 const SQ3H = Math.sqrt(3) / 2; // sin(60°) — used for equilateral triangle vertices

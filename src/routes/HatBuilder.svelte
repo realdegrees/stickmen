@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { DefaultHatDefs, createHat } from '$lib/index.js';
+	import { DefaultHatDefs, createHat, mirrorHatShape } from '$lib/index.js';
 	import type { HatShape, HatLayerDef } from '$lib/index.js';
 	import { createHistory } from '$lib/history.js';
 	import JsonModal from './JsonModal.svelte';
@@ -126,14 +126,6 @@
 			return Math.hypot(c.x - gc.x, c.y - gc.y) + shapes[i].size * HR + 7;
 		}));
 		return { x: gc.x + Math.max(maxReach, 20), y: gc.y, gc };
-	}
-
-	/** Reflect a shape across the vertical centre (x → −x, angle → −angle). */
-	function computeMirror(s: HatShape): HatShape {
-		const angle = (s as { angle?: number }).angle ?? 0;
-		const m = { ...s, x: -s.x } as HatShape;
-		if (s.type !== 'circle') (m as { angle?: number }).angle = -angle;
-		return m;
 	}
 
 	// ── Hit testing ────────────────────────────────────────────────────
@@ -429,7 +421,7 @@
 	// ── Saved hats (localStorage) ──────────────────────────────────────
 
 	const LS_KEY = 'stickmen:saved-hats';
-	let savedHats: Record<string, { id: string; label: string; shapes: HatShape[] }> = $state({});
+	let savedHats: Record<string, { id: string; label: string; shapes: HatShape[]; mirrors?: boolean[] }> = $state({});
 	function loadSavedFromStorage() {
 		try {
 			const raw = localStorage.getItem(LS_KEY);
@@ -449,7 +441,8 @@
 			[hatId]: {
 				id: hatId,
 				label: hatLabel,
-				shapes: shapes.map(s => ({ ...s }) as HatShape)
+				shapes: shapes.map(s => ({ ...s }) as HatShape),
+				mirrors: [...mirrors]
 			}
 		};
 		persistSaved();
@@ -461,7 +454,7 @@
 		snap();
 		hatId = def.id; hatLabel = def.label;
 		shapes  = def.shapes.map(s => ({ ...s }) as HatShape);
-		mirrors = shapes.map(() => false);
+		mirrors = def.mirrors ? [...def.mirrors] : shapes.map(() => false);
 		selectedIdxs = shapes.length > 0 ? [0] : [];
 	}
 
@@ -530,7 +523,7 @@
 		const out: object[] = [];
 		for (let i = 0; i < shapes.length; i++) {
 			out.push(cleanShape(shapes[i]));
-			if (mirrors[i]) out.push(cleanShape(computeMirror(shapes[i])));
+			if (mirrors[i]) out.push(cleanShape(mirrorHatShape(shapes[i])));
 		}
 		return out;
 	}
@@ -600,7 +593,7 @@
 		}
 
 		// Ghost mirror copies — drawn at reduced opacity, no handles
-		const mirrorShapes = shapes.filter((_, i) => mirrors[i]).map(computeMirror);
+		const mirrorShapes = shapes.filter((_, i) => mirrors[i]).map(mirrorHatShape);
 		if (mirrorShapes.length > 0) {
 			ctx.save();
 			ctx.globalAlpha = 0.45;

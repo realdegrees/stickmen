@@ -7,6 +7,7 @@
 	import type { AnimKeyframe, JointAngles, EasingType, Pose } from '$lib/index.js';
 	import { createHistory } from '$lib/history.js';
 	import JsonModal from './JsonModal.svelte';
+	import { DefaultHatDefs, createHat, mirrorHatShape, type HatDef, type HatLayerDef } from '$lib/engine/hats.js';
 
 	// ── Types ─────────────────────────────────────────────────────────
 
@@ -52,6 +53,10 @@
 
 	// LOOP canvas reference animation ('' = show current edit)
 	let loopRef = $state('');
+
+	// Hat preview state for the loop canvas
+	let allHats = $state<(HatDef | null)[]>([]);
+	let hatIndex = $state(0);
 
 	// ── Saved animations (localStorage) ───────────────────────────────
 
@@ -176,10 +181,10 @@
 
 	// Mini canvas constants
 	// body vertical extent: legLen(11) + torso(8) + neck(2) + head(3) = 24 local units
-	// at MSCALE=3.6 → 86px; head top ≈ 14px from canvas top; feet at MCY=112
-	const MW = 110, MH = 148;
+	// at MSCALE=3.6 → 86px; MCY shifted down 20px to give room for hat above head
+	const MW = 110, MH = 168;
 	const MCX = MW / 2;
-	const MCY = 112; // feet Y position
+	const MCY = 132; // feet Y position (shifted down 20px vs original 112 for hat clearance)
 	const MSCALE = 3.6;
 
 	// ── Angle helpers ─────────────────────────────────────────────────
@@ -418,7 +423,7 @@
 		ctx.setLineDash([]);
 	}
 
-	function drawFig(ctx: CanvasRenderingContext2D, pose: Pose, alpha = 1, hue = 190) {
+	function drawFig(ctx: CanvasRenderingContext2D, pose: Pose, alpha = 1, hue = 190, hat?: HatDef | null) {
 		ctx.save();
 		ctx.globalAlpha = alpha;
 		ctx.strokeStyle = `hsl(${hue}, 65%, 58%)`;
@@ -430,8 +435,14 @@
 			ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
 		}
 		const hd = { x: MCX + pose.head.x * MSCALE, y: MCY + pose.head.y * MSCALE };
-		ctx.beginPath(); ctx.arc(hd.x, hd.y, DEFAULT_CONFIG.stickman.headRadius * MSCALE, 0, Math.PI * 2);
+		const headRadius = DEFAULT_CONFIG.stickman.headRadius * MSCALE;
+		ctx.beginPath(); ctx.arc(hd.x, hd.y, headRadius, 0, Math.PI * 2);
 		ctx.fill(); ctx.stroke();
+		if (hat) {
+			const neck = { x: MCX + pose.neck.x * MSCALE, y: MCY + pose.neck.y * MSCALE };
+			const headAngle = Math.atan2(hd.x - neck.x, neck.y - hd.y);
+			hat.draw(ctx, hd.x, hd.y, headRadius, headAngle, `hsl(${hue}, 65%, 58%)`, 1);
+		}
 		ctx.restore();
 	}
 
@@ -486,11 +497,12 @@
 		const ref = loopRef ? DefaultAnimations[loopRef as keyof typeof DefaultAnimations] : null;
 		const kfs = ref ? ref.keyframes : keyframes;
 		const type = ref ? ref.type : animType;
+		const hat = allHats.length > 0 ? allHats[hatIndex] : undefined;
 		if (kfs.length >= 1) {
 			const { angles: a, offsetX: ox, offsetY: oy } = resolveAnglesAtTime(kfs, loopPhase, type === 'cyclic');
-			drawFig(ctx, poseFrom(a, ox, oy));
+			drawFig(ctx, poseFrom(a, ox, oy), 1, 190, hat);
 		} else {
-			drawFig(ctx, poseFrom(DEFAULT_ANGLES, 0, 0), 0.2);
+			drawFig(ctx, poseFrom(DEFAULT_ANGLES, 0, 0), 0.2, 190, hat);
 		}
 	}
 
@@ -552,6 +564,11 @@
 	function stopPlayback() { playing = false; cancelAnimationFrame(playRafId); }
 	function togglePlay() { if (playing) stopPlayback(); else startPlayback(); }
 
+	// ── Hat cycling ───────────────────────────────────────────────────
+
+	function prevHat() { if (allHats.length) hatIndex = (hatIndex - 1 + allHats.length) % allHats.length; }
+	function nextHat() { if (allHats.length) hatIndex = (hatIndex + 1) % allHats.length; }
+
 	// ── Independent loop RAF ──────────────────────────────────────────
 
 	function startLoopRaf() {
@@ -571,6 +588,27 @@
 
 	onMount(() => {
 		loadSavedFromStorage();
+
+		// Build combined hat list: null (no hat) + defaults + saved local hats
+		const defaults = Object.values(DefaultHatDefs).map(createHat);
+		let savedHats: HatDef[] = [];
+		try {
+			const raw = localStorage.getItem('stickmen:saved-hats');
+			if (raw) {
+				const obj: Record<string, HatLayerDef & { mirrors?: boolean[] }> = JSON.parse(raw);
+				savedHats = Object.values(obj).map(def => {
+					// Bake any mirror flags into the shape list before creating the live hat
+					const resolved = def.shapes.flatMap((s, i) =>
+						def.mirrors?.[i] ? [s, mirrorHatShape(s)] : [s]
+					);
+					return createHat({ id: def.id, label: def.label, shapes: resolved });
+				});
+			}
+		} catch { /* ignore */ }
+		allHats = [null, ...defaults, ...savedHats];
+		// Start on a random hat (not null)
+		hatIndex = Math.floor(Math.random() * (allHats.length - 1)) + 1;
+
 		[canvasLoop, canvasPrev, canvasCurrent, canvasNext].forEach(setupCanvas);
 		renderThree();
 		renderLoopCanvas();
@@ -672,18 +710,31 @@
 		<!-- ── LEFT: preview + controls + code ──────────────────────── -->
 		<div class="ae-left">
 
-			<!-- 4-figure preview row -->
-			<div class="ae-preview">
-				<!-- LOOP: always playing; select picks reference animation -->
-				<div class="ae-fig">
+		<!-- facing hint -->
+		<div class="ae-facing-hint">
+			<svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+				<polygon points="2,1 9,5 2,9"/>
+			</svg>
+			poses are right-facing · auto-flipped when moving left
+		</div>
+
+		<!-- 4-figure preview row -->
+		<div class="ae-preview">
+			<!-- LOOP: always playing; select picks reference animation -->
+			<div class="ae-fig">
+				<div class="ae-loop-wrap">
 					<canvas bind:this={canvasLoop}></canvas>
-					<select class="ae-loop-ref" bind:value={loopRef}>
-						<option value="">LOOP</option>
-						{#each Object.keys(DefaultAnimations) as key}
-							<option value={key}>{key}</option>
-						{/each}
-					</select>
+					<button class="ae-hat-btn ae-hat-prev" onclick={prevHat} aria-label="Previous hat">&#9664;</button>
+					<button class="ae-hat-btn ae-hat-next" onclick={nextHat} aria-label="Next hat">&#9654;</button>
+					<span class="ae-hat-lbl">{allHats[hatIndex]?.label ?? 'no hat'}</span>
 				</div>
+				<select class="ae-loop-ref" bind:value={loopRef}>
+					<option value="">LOOP</option>
+					{#each Object.keys(DefaultAnimations) as key}
+						<option value={key}>{key}</option>
+					{/each}
+				</select>
+			</div>
 				<!-- PREV KF: click to select that keyframe -->
 				<div
 					class="ae-fig ae-fig-dim"
@@ -1003,6 +1054,61 @@
 	}
 	.ae-loop-ref:focus { outline: none; color: #666; }
 	.ae-loop-ref option { background: #111; color: #888; }
+
+	/* ── Facing hint ── */
+
+	.ae-facing-hint {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.28rem 0.75rem;
+		font-size: 0.5rem;
+		color: #2c2c2c;
+		letter-spacing: 0.05em;
+		background: #0a0a0a;
+		border-bottom: 1px solid #111;
+	}
+
+	/* ── Hat cycling overlay ── */
+
+	.ae-loop-wrap {
+		position: relative;
+	}
+
+	.ae-hat-btn {
+		position: absolute;
+		bottom: 4px;
+		background: rgba(0, 0, 0, 0.6);
+		border: 1px solid #222;
+		color: #3a3a3a;
+		font-size: 0.48rem;
+		width: 14px;
+		height: 14px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 2px;
+		cursor: crosshair;
+		padding: 0;
+		line-height: 1;
+		transition: color 0.12s, border-color 0.12s;
+	}
+	.ae-hat-btn:hover { color: #999; border-color: #484848; }
+	.ae-hat-prev { left: 3px; }
+	.ae-hat-next { right: 3px; }
+
+	.ae-hat-lbl {
+		position: absolute;
+		bottom: 5px;
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 0.42rem;
+		color: #2e2e2e;
+		letter-spacing: 0.06em;
+		pointer-events: none;
+		white-space: nowrap;
+		text-transform: uppercase;
+	}
 
 	.ae-fig-lbl {
 		font-size: 0.52rem;

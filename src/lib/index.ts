@@ -59,5 +59,5 @@ export { DefaultAnimations } from './engine/animations/defaults.js';
 
 // ── Hat System ───────────────────────────────────────────────────────
 export type { HatDef, HatShape, HatLayerDef } from './engine/hats.js';
-export { HatRegistry, createHat, DefaultHatDefs } from './engine/hats.js';
+export { HatRegistry, createHat, DefaultHatDefs, mirrorHatShape } from './engine/hats.js';
 
