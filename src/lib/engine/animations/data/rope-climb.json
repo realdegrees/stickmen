@@ -1,0 +1,9 @@
+{
+  "id": "rope-climb",
+  "type": "cyclic",
+  "frameCount": 28,
+  "keyframes": [
+    { "t": 0,   "easing": "ease-in-out", "joints": { "shoulderL": -165, "elbowL": 0,   "shoulderR": -150, "elbowR": -10, "hipL": 9,  "hipR": -9 }, "offset": { "x": 3, "y": -1 } },
+    { "t": 0.5, "easing": "ease-in-out", "joints": { "shoulderL": -150, "elbowL": -10, "shoulderR": -165, "elbowR": 0,   "hipL": -9, "hipR": 9  }, "offset": { "x": 3, "y": -1 } }
+  ]
+}

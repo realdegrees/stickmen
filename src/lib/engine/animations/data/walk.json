@@ -1,0 +1,9 @@
+{
+  "id": "walk",
+  "type": "cyclic",
+  "frameCount": 28,
+  "keyframes": [
+    { "t": 0,   "easing": "ease-in-out", "joints": { "torso": 8, "hipL": -42, "kneeL": 14,  "hipR": 42,  "kneeR": -14, "shoulderL": 32,  "elbowL": 18,  "shoulderR": -30, "elbowR": -12 } },
+    { "t": 0.5, "easing": "ease-in-out", "joints": { "torso": 8, "hipL": 42,  "kneeL": -14, "hipR": -42, "kneeR": 14,  "shoulderL": -30, "elbowL": -12, "shoulderR": 32,  "elbowR": 18  } }
+  ]
+}

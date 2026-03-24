@@ -1,0 +1,9 @@
+{
+  "id": "wizard",
+  "label": "Wizard Hat",
+  "shapes": [
+    { "type": "line",     "x": 0,    "y": 0,     "size": 1.6,  "angle": 0   },
+    { "type": "triangle", "x": -0.1, "y": -0.83, "size": 1.67, "angle": 0   },
+    { "type": "curve",    "x": 0.35, "y": -2.65, "size": 0.67, "angle": -13, "curvature": 0.7 }
+  ]
+}

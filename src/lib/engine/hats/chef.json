@@ -1,0 +1,8 @@
+{
+  "id": "chef",
+  "label": "Chef Hat",
+  "shapes": [
+    { "type": "line", "x": 0, "y": 0, "size": 1.3, "angle": 0 },
+    { "type": "arc",  "x": 0, "y": 0, "size": 1.3, "span": 240 }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "beanie",
+  "label": "Beanie",
+  "shapes": [
+    { "type": "arc",    "x": 0, "y": 0,    "size": 1.2 },
+    { "type": "circle", "x": 0, "y": -1.2, "size": 0.5, "fill": true }
+  ]
+}

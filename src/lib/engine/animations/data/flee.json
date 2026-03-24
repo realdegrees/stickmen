@@ -1,0 +1,9 @@
+{
+  "id": "flee",
+  "type": "cyclic",
+  "frameCount": 22,
+  "keyframes": [
+    { "t": 0,   "easing": "ease-in-out", "joints": { "torso": 12, "hipL": -57, "kneeL": 17,  "hipR": 57,  "kneeR": -17, "shoulderL": -115, "elbowL": -17, "shoulderR": -100, "elbowR": -20 } },
+    { "t": 0.5, "easing": "ease-in-out", "joints": { "torso": 12, "hipL": 57,  "kneeL": -17, "hipR": -57, "kneeR": 17,  "shoulderL": -100, "elbowL": -20, "shoulderR": -115, "elbowR": -17 } }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "plant",
+  "type": "oneshot",
+  "frameCount": 7,
+  "keyframes": [
+    { "t": 0,   "easing": "step", "joints": { "shoulderL": 29, "elbowL": 23, "shoulderR": -23, "elbowR": 29, "hipL": 29, "kneeL": -40, "hipR": -23, "kneeR": 40 }, "offset": { "x": 1, "y": -7 } },
+    { "t": 0.5, "easing": "step", "joints": { "shoulderL": 29, "elbowL": 23, "shoulderR": 46,  "elbowR": 29, "hipL": 29, "kneeL": -40, "hipR": -23, "kneeR": 40 }, "offset": { "x": 1, "y": -7 } }
+  ]
+}

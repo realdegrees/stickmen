@@ -1,0 +1,8 @@
+{
+  "id": "horns",
+  "label": "Horns",
+  "shapes": [
+    { "type": "curve", "x": -1.15, "y": -1.0, "size": 1.06, "angle": 71,  "curvature": 0.3 },
+    { "type": "curve", "x": 1.15,  "y": -1.0, "size": 1.06, "angle": -71, "curvature": 0.3 }
+  ]
+}

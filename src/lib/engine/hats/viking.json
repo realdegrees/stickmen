@@ -1,0 +1,10 @@
+{
+  "id": "viking",
+  "label": "Viking Helmet",
+  "shapes": [
+    { "type": "arc",   "x": 0,      "y": 0.5,    "size": 0.915 },
+    { "type": "line",  "x": 0,      "y": 0.25,   "size": 0.679, "angle": 90  },
+    { "type": "curve", "x": -0.899, "y": -0.815, "size": 0.726, "angle": -109, "curvature": 0.5 },
+    { "type": "curve", "x": 0.936,  "y": -0.813, "size": 0.749, "angle": 109,  "curvature": 0.5 }
+  ]
+}

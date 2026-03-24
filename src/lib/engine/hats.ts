@@ -1,6 +1,19 @@
 /**
- * Hat registry — procedurally drawn hat accessories for stickmen.
+ * Hat system — serializable hat definitions + live HatDef factory + registry.
  */
+
+import hardhat  from './hats/hardhat.json'  with { type: 'json' };
+import tophat   from './hats/tophat.json'   with { type: 'json' };
+import crown    from './hats/crown.json'    with { type: 'json' };
+import antenna  from './hats/antenna.json'  with { type: 'json' };
+import horns    from './hats/horns.json'    with { type: 'json' };
+import cowboy   from './hats/cowboy.json'   with { type: 'json' };
+import beanie   from './hats/beanie.json'   with { type: 'json' };
+import chef     from './hats/chef.json'     with { type: 'json' };
+import wizard   from './hats/wizard.json'   with { type: 'json' };
+import viking   from './hats/viking.json'   with { type: 'json' };
+
+// ── Types ────────────────────────────────────────────────────────────
 
 export interface HatDef {
   id: string;
@@ -14,245 +27,6 @@ export interface HatDef {
     color: string,
   ) => void;
 }
-
-// ── Built-in Hats ────────────────────────────────────────────────────
-
-const builtinHats: HatDef[] = [
-  {
-    id: "hardhat",
-    label: "Hard Hat",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      // Brim
-      ctx.beginPath();
-      ctx.moveTo(-hr * 1.8, 0);
-      ctx.lineTo(hr * 1.8, 0);
-      ctx.stroke();
-      // Dome
-      ctx.beginPath();
-      ctx.arc(0, 0, hr * 1.3, Math.PI, 0);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-  {
-    id: "tophat",
-    label: "Top Hat",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      const bw = hr * 1.6;
-      const tw = hr * 1.0;
-      const th = hr * 2.5;
-      ctx.beginPath();
-      ctx.moveTo(-bw, 0);
-      ctx.lineTo(bw, 0);
-      ctx.stroke();
-      ctx.strokeRect(-tw, -th, tw * 2, th);
-      ctx.restore();
-    },
-  },
-  {
-    id: "crown",
-    label: "Crown",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      const w = hr * 1.4;
-      const h = hr * 1.5;
-      ctx.beginPath();
-      ctx.moveTo(-w, 0);
-      ctx.lineTo(-w, -h * 0.6);
-      ctx.lineTo(-w * 0.5, -h * 0.3);
-      ctx.lineTo(0, -h);
-      ctx.lineTo(w * 0.5, -h * 0.3);
-      ctx.lineTo(w, -h * 0.6);
-      ctx.lineTo(w, 0);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-  {
-    id: "antenna",
-    label: "Antenna",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.lineWidth = 1;
-      const len = hr * 3;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, -len);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(0, -len, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    },
-  },
-  {
-    id: "horns",
-    label: "Horns",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      // Left horn
-      ctx.beginPath();
-      ctx.moveTo(-hr * 0.8, 0);
-      ctx.quadraticCurveTo(-hr * 2, -hr * 0.5, -hr * 1.5, -hr * 2);
-      ctx.stroke();
-      // Right horn
-      ctx.beginPath();
-      ctx.moveTo(hr * 0.8, 0);
-      ctx.quadraticCurveTo(hr * 2, -hr * 0.5, hr * 1.5, -hr * 2);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-  {
-    id: "cowboy",
-    label: "Cowboy Hat",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      const bw = hr * 2.2;
-      // Wide brim (curved)
-      ctx.beginPath();
-      ctx.moveTo(-bw, 0);
-      ctx.quadraticCurveTo(0, hr * 0.5, bw, 0);
-      ctx.stroke();
-      // Dome
-      ctx.beginPath();
-      ctx.arc(0, -hr * 0.3, hr * 1.1, Math.PI, 0);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-  {
-    id: "beanie",
-    label: "Beanie",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.lineWidth = 1;
-      // Dome
-      ctx.beginPath();
-      ctx.arc(0, 0, hr * 1.2, Math.PI, 0);
-      ctx.stroke();
-      // Pompom
-      ctx.beginPath();
-      ctx.arc(0, -hr * 1.2, hr * 0.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    },
-  },
-  {
-    id: "chef",
-    label: "Chef Hat",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      const w = hr * 1.3;
-      // Brim
-      ctx.beginPath();
-      ctx.moveTo(-w, 0);
-      ctx.lineTo(w, 0);
-      ctx.stroke();
-      // Puffy top
-      ctx.beginPath();
-      ctx.moveTo(-w, 0);
-      ctx.quadraticCurveTo(-w * 1.2, -hr * 2, 0, -hr * 2.5);
-      ctx.quadraticCurveTo(w * 1.2, -hr * 2, w, 0);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-  {
-    id: "wizard",
-    label: "Wizard Hat",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      const bw = hr * 1.6;
-      // Brim
-      ctx.beginPath();
-      ctx.moveTo(-bw, 0);
-      ctx.lineTo(bw, 0);
-      ctx.stroke();
-      // Pointed cone with curl
-      ctx.beginPath();
-      ctx.moveTo(-bw * 0.8, 0);
-      ctx.lineTo(-hr * 0.3, -hr * 2.5);
-      ctx.quadraticCurveTo(hr * 0.5, -hr * 3.5, hr * 1, -hr * 2.8);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(bw * 0.8, 0);
-      ctx.lineTo(-hr * 0.3, -hr * 2.5);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-  {
-    id: "viking",
-    label: "Viking Helmet",
-    draw(ctx, hx, hy, hr, angle, color) {
-      ctx.save();
-      ctx.translate(hx, hy - hr);
-      ctx.rotate(angle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      // Dome
-      ctx.beginPath();
-      ctx.arc(0, 0, hr * 1.3, Math.PI, 0);
-      ctx.stroke();
-      // Nose guard
-      ctx.beginPath();
-      ctx.moveTo(0, -hr * 0.3);
-      ctx.lineTo(0, hr * 0.8);
-      ctx.stroke();
-      // Horns
-      ctx.beginPath();
-      ctx.moveTo(-hr * 1.3, -hr * 0.2);
-      ctx.quadraticCurveTo(-hr * 2.2, -hr * 1.5, -hr * 1.5, -hr * 2.5);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(hr * 1.3, -hr * 0.2);
-      ctx.quadraticCurveTo(hr * 2.2, -hr * 1.5, hr * 1.5, -hr * 2.5);
-      ctx.stroke();
-      ctx.restore();
-    },
-  },
-];
-
-// ── Serializable Hat Format ──────────────────────────────────────────
 
 /**
  * A geometric shape primitive for building hats.
@@ -321,6 +95,8 @@ export interface HatLayerDef {
   shapes: HatShape[];
 }
 
+// ── Shape drawing ────────────────────────────────────────────────────
+
 const SQ3H = Math.sqrt(3) / 2; // sin(60°) — used for equilateral triangle vertices
 
 /**
@@ -353,10 +129,8 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
     }
     case "arc": {
       if (s.thickness != null) ctx.lineWidth = s.thickness;
-      // Canonical = upper semicircle (dome). angle rotates it.
-      // span = arc width in degrees, centred on the "up" direction.
       const span = ((s.span ?? 180) * Math.PI) / 180;
-      const mid = (3 * Math.PI) / 2; // "up" in canvas space
+      const mid = (3 * Math.PI) / 2;
       ctx.beginPath();
       ctx.arc(0, 0, r, mid - span / 2, mid + span / 2, false);
       if (s.fill) ctx.fill();
@@ -382,8 +156,6 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
       break;
     }
     case "curve": {
-      // Symmetric quadratic bezier: endpoints at (±size, 0), control bow upward.
-      // curvature > 0 = bow toward hat top; < 0 = bow toward face.
       if (s.thickness != null) ctx.lineWidth = s.thickness;
       const c = s.curvature ?? 0.5;
       ctx.beginPath();
@@ -396,18 +168,21 @@ function drawShape(ctx: CanvasRenderingContext2D, s: HatShape, hr: number) {
   ctx.restore();
 }
 
+// ── Factory ──────────────────────────────────────────────────────────
+
 /**
- * Creates a live HatDef from a serializable HatLayerDef.
+ * Creates a live HatDef from a serializable HatLayerDef or a JSON string.
  * Analogous to createKeyframeAnimation().
  */
-export function createHat(def: HatLayerDef): HatDef {
+export function createHat(def: HatLayerDef | string): HatDef {
+  if (typeof def === 'string') def = JSON.parse(def) as HatLayerDef;
   return {
     id: def.id,
     label: def.label,
     draw(ctx, hx, hy, hr, hatAngle, color) {
       ctx.save();
-      ctx.translate(hx, hy - hr); // hat origin = top of head (crown)
-      ctx.rotate(hatAngle); // tilt with the stickman's head
+      ctx.translate(hx, hy - hr);
+      ctx.rotate(hatAngle);
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       ctx.lineWidth = 1;
@@ -419,138 +194,24 @@ export function createHat(def: HatLayerDef): HatDef {
   };
 }
 
+// ── Defaults ─────────────────────────────────────────────────────────
+
 /**
- * All 10 built-in hats re-expressed as HatLayerDef objects using geometric
- * primitives — these are the "editable" versions loadable in the Hat Builder.
- * The live stickman still uses the procedural builtinHats above.
- *
- * Coordinate reference:
- *   y = 0  → crown (top of head)
- *   y = 1  → head centre
- *   y = 2  → chin
- *   y < 0  → above the hat
+ * All 10 built-in hat definitions as serializable HatLayerDef objects.
+ * These are the single source of truth — the live engine uses createHat()
+ * on these, so there is no separate procedural builtinHats array.
  */
 export const DefaultHatDefs: Record<string, HatLayerDef> = {
-  hardhat: {
-    id: "hardhat",
-    label: "Hard Hat",
-    shapes: [
-      { type: "line", x: 0, y: 0, size: 1.8, angle: 0 }, // brim
-      { type: "arc", x: 0, y: 0, size: 1.3 }, // dome (span=180, facing up)
-    ],
-  },
-  tophat: {
-    id: "tophat",
-    label: "Top Hat",
-    shapes: [
-      { type: "line", x: 0, y: 0, size: 1.6, angle: 0 }, // brim
-      { type: "rect", x: 0, y: -1.25, size: 1.0, aspect: 1.25 }, // tube (w=2, h=2.5)
-    ],
-  },
-  crown: {
-    id: "crown",
-    label: "Crown",
-    shapes: [
-      { type: "triangle", x: 0, y: -0.5, size: 1.0, angle: 0 }, // centre spike
-      { type: "triangle", x: -0.9, y: -0.25, size: 0.45, angle: 15 }, // left spike
-      { type: "triangle", x: 0.9, y: -0.25, size: 0.45, angle: -15 }, // right spike
-    ],
-  },
-  antenna: {
-    id: "antenna",
-    label: "Antenna",
-    shapes: [
-      { type: "line", x: 0, y: -1.5, size: 1.5, angle: 90 }, // vertical stick
-      { type: "circle", x: 0, y: -3.0, size: 0.5, fill: true }, // orb
-    ],
-  },
-  horns: {
-    id: "horns",
-    label: "Horns",
-    // Two symmetric curves. Angle and center derived from the original quadratic bezier.
-    shapes: [
-      {
-        type: "curve",
-        x: -1.15,
-        y: -1.0,
-        size: 1.06,
-        angle: 71,
-        curvature: 0.3,
-      },
-      {
-        type: "curve",
-        x: 1.15,
-        y: -1.0,
-        size: 1.06,
-        angle: -71,
-        curvature: 0.3,
-      },
-    ],
-  },
-  cowboy: {
-    id: "cowboy",
-    label: "Cowboy Hat",
-    shapes: [
-      { type: "curve", x: 0, y: 0, size: 2.2, angle: 0, curvature: -0.11 }, // curved brim (bows down)
-      { type: "arc", x: 0, y: -0.3, size: 1.1 }, // dome
-    ],
-  },
-  beanie: {
-    id: "beanie",
-    label: "Beanie",
-    shapes: [
-      { type: "arc", x: 0, y: 0, size: 1.2 }, // dome
-      { type: "circle", x: 0, y: -1.2, size: 0.5, fill: true }, // pompom
-    ],
-  },
-  chef: {
-    id: "chef",
-    label: "Chef Hat",
-    shapes: [
-      { type: "line", x: 0, y: 0, size: 1.3, angle: 0 }, // brim
-      { type: "arc", x: 0, y: 0, size: 1.3, span: 240 }, // wide puffy dome
-    ],
-  },
-  wizard: {
-    id: "wizard",
-    label: "Wizard Hat",
-    shapes: [
-      { type: "line", x: 0, y: 0, size: 1.6, angle: 0 }, // brim
-      { type: "triangle", x: -0.1, y: -0.83, size: 1.67, angle: 0 }, // cone body
-      {
-        type: "curve",
-        x: 0.35,
-        y: -2.65,
-        size: 0.67,
-        angle: -13,
-        curvature: 0.7,
-      }, // curl at tip
-    ],
-  },
-  viking: {
-    id: "viking",
-    label: "Viking Helmet",
-    shapes: [
-      { type: "arc", x: 0, y: 0.5, size: 0.915 },
-      { type: "line", x: 0, y: 0.25, size: 0.679, angle: 90 },
-      {
-        type: "curve",
-        x: -0.899,
-        y: -0.815,
-        size: 0.726,
-        angle: -109,
-        curvature: 0.5,
-      },
-      {
-        type: "curve",
-        x: 0.936,
-        y: -0.813,
-        size: 0.749,
-        angle: 109,
-        curvature: 0.5,
-      },
-    ],
-  },
+  hardhat:  hardhat  as unknown as HatLayerDef,
+  tophat:   tophat   as unknown as HatLayerDef,
+  crown:    crown    as unknown as HatLayerDef,
+  antenna:  antenna  as unknown as HatLayerDef,
+  horns:    horns    as unknown as HatLayerDef,
+  cowboy:   cowboy   as unknown as HatLayerDef,
+  beanie:   beanie   as unknown as HatLayerDef,
+  chef:     chef     as unknown as HatLayerDef,
+  wizard:   wizard   as unknown as HatLayerDef,
+  viking:   viking   as unknown as HatLayerDef,
 };
 
 // ── Registry ─────────────────────────────────────────────────────────
@@ -560,7 +221,8 @@ export class HatRegistry {
 
   constructor(registerDefaults = true) {
     if (registerDefaults) {
-      for (const hat of builtinHats) {
+      for (const def of Object.values(DefaultHatDefs)) {
+        const hat = createHat(def);
         this.hats.set(hat.id, hat);
       }
     }

@@ -1,0 +1,9 @@
+{
+  "id": "crown",
+  "label": "Crown",
+  "shapes": [
+    { "type": "triangle", "x": 0,    "y": -0.5,  "size": 1.0,  "angle": 0   },
+    { "type": "triangle", "x": -0.9, "y": -0.25, "size": 0.45, "angle": 15  },
+    { "type": "triangle", "x": 0.9,  "y": -0.25, "size": 0.45, "angle": -15 }
+  ]
+}

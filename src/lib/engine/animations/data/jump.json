@@ -1,0 +1,13 @@
+{
+  "id": "jump",
+  "type": "oneshot",
+  "frameCount": 30,
+  "keyframes": [
+    { "t": 0,    "joints": { "torso": 0, "hipL": 3,  "hipR": -3  }, "offset": { "y": 0  } },
+    { "t": 0.15, "easing": "ease-in",  "joints": { "torso": 5, "shoulderL": 46,  "elbowL": 23,  "shoulderR": -46, "elbowR": -23, "hipL": 46,  "kneeL": -92, "hipR": -46, "kneeR": 92  }, "offset": { "y": -8 } },
+    { "t": 0.25, "easing": "ease-out", "joints": { "torso": 0, "shoulderL": -29, "elbowL": -17, "shoulderR": 29,  "elbowR": 17,  "hipL": 6,   "hipR": -6,   "kneeL": 6,  "kneeR": -6  }, "offset": { "y": 0  } },
+    { "t": 0.5,  "easing": "linear",   "joints": { "torso": 0, "shoulderL": -40, "elbowL": -17, "shoulderR": 40,  "elbowR": 17,  "hipL": 23,  "hipR": -23,  "kneeL": 11, "kneeR": -11 }, "offset": { "y": -1 } },
+    { "t": 0.82, "easing": "ease-in",  "joints": { "torso": 3, "shoulderL": -17, "elbowL": -17, "shoulderR": 17,  "elbowR": 17,  "hipL": 9,   "hipR": -9,   "kneeL": 6,  "kneeR": -6  }, "offset": { "y": 0  } },
+    { "t": 1.0,  "easing": "ease-out", "joints": { "torso": 5, "shoulderL": 11,  "elbowL": 17,  "shoulderR": -11, "elbowR": -17, "hipL": 34,  "hipR": -34,  "kneeL": -57, "kneeR": 57 }, "offset": { "y": -4 } }
+  ]
+}

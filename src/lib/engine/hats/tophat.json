@@ -1,0 +1,8 @@
+{
+  "id": "tophat",
+  "label": "Top Hat",
+  "shapes": [
+    { "type": "line", "x": 0, "y": 0,     "size": 1.6,  "angle": 0 },
+    { "type": "rect", "x": 0, "y": -1.25, "size": 1.0,  "aspect": 1.25 }
+  ]
+}

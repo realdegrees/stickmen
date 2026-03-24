@@ -1,0 +1,10 @@
+{
+  "id": "hide",
+  "type": "oneshot",
+  "frameCount": 7,
+  "keyframes": [
+    { "t": 0,   "easing": "step", "joints": { "shoulderL": 46, "elbowL": 23, "shoulderR": -46, "elbowR": -23, "hipL": 34, "kneeL": -52, "hipR": -34, "kneeR": 52 }, "offset": { "x": 0, "y": -7 } },
+    { "t": 0.4, "easing": "step", "joints": { "head": 5, "shoulderL": 46, "elbowL": 23, "shoulderR": -46, "elbowR": -23, "hipL": 34, "kneeL": -52, "hipR": -34, "kneeR": 52 }, "offset": { "x": 2, "y": -7 } },
+    { "t": 0.6, "easing": "step", "joints": { "head": 0, "shoulderL": 46, "elbowL": 23, "shoulderR": -46, "elbowR": -23, "hipL": 34, "kneeL": -52, "hipR": -34, "kneeR": 52 }, "offset": { "x": 0, "y": -7 } }
+  ]
+}

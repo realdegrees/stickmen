@@ -178,10 +178,11 @@ export function anglesToPose(
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
- * Creates an AnimationResolver from a keyframe definition.
+ * Creates an AnimationResolver from a serializable KeyframeAnimationDef or a JSON string.
  * Joint angles are in degrees. This is the only animation authoring API.
  */
-export function createKeyframeAnimation(def: KeyframeAnimationDef): AnimationResolver {
+export function createKeyframeAnimation(def: KeyframeAnimationDef | string): AnimationResolver {
+	if (typeof def === 'string') def = JSON.parse(def) as KeyframeAnimationDef;
 	const sortedKeyframes = [...def.keyframes].sort((a, b) => a.t - b.t);
 
 	return {

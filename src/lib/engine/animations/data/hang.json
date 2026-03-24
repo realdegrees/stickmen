@@ -1,0 +1,9 @@
+{
+  "id": "hang",
+  "type": "oneshot",
+  "frameCount": 7,
+  "keyframes": [
+    { "t": 0,   "easing": "ease-in-out", "joints": { "shoulderL": -170, "elbowL": 5,  "shoulderR": 170,  "elbowR": -5,  "hipL": 6, "hipR": -6 } },
+    { "t": 0.5, "easing": "ease-in-out", "joints": { "torso": 3, "shoulderL": -168, "elbowL": 8, "shoulderR": 172, "elbowR": -3, "hipL": 9, "hipR": -3 }, "offset": { "x": 0.5 } }
+  ]
+}

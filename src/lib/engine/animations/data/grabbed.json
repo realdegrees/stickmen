@@ -1,0 +1,9 @@
+{
+  "id": "grabbed",
+  "type": "oneshot",
+  "frameCount": 7,
+  "keyframes": [
+    { "t": 0,   "easing": "ease-in-out", "joints": { "shoulderL": 11, "elbowL": 23, "shoulderR": -11, "elbowR": -23, "hipL": 9,  "kneeL": -3, "hipR": -9,  "kneeR": 3 }, "offset": { "x": -0.5, "y": -7 } },
+    { "t": 0.5, "easing": "ease-in-out", "joints": { "shoulderL": 23, "elbowL": 11, "shoulderR": -23, "elbowR": -11, "hipL": 14, "kneeL": -8, "hipR": -14, "kneeR": 8 }, "offset": { "x": 0.5,  "y": -7 } }
+  ]
+}

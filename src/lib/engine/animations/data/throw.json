@@ -1,0 +1,9 @@
+{
+  "id": "throw",
+  "type": "oneshot",
+  "frameCount": 7,
+  "keyframes": [
+    { "t": 0,   "easing": "step", "joints": { "torso": -14, "shoulderL": 23, "elbowL": 17, "shoulderR": 46,  "elbowR": 23, "hipL": 17, "kneeL": -11, "hipR": -14, "kneeR": 6 } },
+    { "t": 0.5, "easing": "step", "joints": { "torso": -14, "shoulderL": 23, "elbowL": 17, "shoulderR": 155, "elbowR": 5,  "hipL": 17, "kneeL": -11, "hipR": -14, "kneeR": 6 } }
+  ]
+}

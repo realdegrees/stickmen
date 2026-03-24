@@ -1,0 +1,8 @@
+{
+  "id": "cowboy",
+  "label": "Cowboy Hat",
+  "shapes": [
+    { "type": "curve", "x": 0, "y": 0,    "size": 2.2, "angle": 0, "curvature": -0.11 },
+    { "type": "arc",   "x": 0, "y": -0.3, "size": 1.1 }
+  ]
+}
