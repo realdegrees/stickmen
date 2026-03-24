@@ -152,11 +152,16 @@
 		if (dragTarget.type === 'knob') {
 			const dx = e.clientX - dragTarget.cx;
 			const dy = e.clientY - dragTarget.cy;
-			setKnobAngle(dragTarget.key, Math.atan2(dx, dy) * 180 / Math.PI);
+			let deg = Math.atan2(dx, dy) * 180 / Math.PI;
+			if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+			setKnobAngle(dragTarget.key, deg);
 		} else {
 			const { rect } = dragTarget;
-			offsetX = Math.max(-20, Math.min(20, ((e.clientX - rect.left) / rect.width - 0.5) * 40));
-			offsetY = Math.max(-12, Math.min(4,  (0.5 - (e.clientY - rect.top) / rect.height) * 32));
+			let ox = Math.max(-20, Math.min(20, ((e.clientX - rect.left) / rect.width - 0.5) * 40));
+			let oy = Math.max(-12, Math.min(4,  (0.5 - (e.clientY - rect.top) / rect.height) * 32));
+			if (e.shiftKey) { ox = Math.round(ox); oy = Math.round(oy); }
+			offsetX = ox;
+			offsetY = oy;
 		}
 		// Auto-upsert keyframe at current scrub position on every drag move
 		upsertCurrentPose();

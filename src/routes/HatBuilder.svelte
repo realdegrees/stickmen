@@ -160,6 +160,11 @@
 		}
 	}
 
+	/** Snap a value to a step if shift is held. */
+	function snapTo(val: number, step: number, shift: boolean): number {
+		return shift ? Math.round(val / step) * step : val;
+	}
+
 	function onWindowMouseMove(e: MouseEvent) {
 		if (!dragging) {
 			// Update cursor hint
@@ -179,21 +184,26 @@
 		const rect = canvas.getBoundingClientRect();
 		const mx = e.clientX - rect.left;
 		const my = e.clientY - rect.top;
+		const shift = e.shiftKey;
 
 		const d = dragging;
 		if (d.mode === 'move') {
 			const dx = (mx - d.startMX) / HR;
 			const dy = (my - d.startMY) / HR;
+			const nx = snapTo(d.startX + dx, 0.25, shift);
+			const ny = snapTo(d.startY + dy, 0.25, shift);
 			shapes = shapes.map((s, i) => i === d.idx
-				? { ...s, x: round3(d.startX + dx), y: round3(d.startY + dy) } as HatShape
+				? { ...s, x: round3(nx), y: round3(ny) } as HatShape
 				: s
 			);
 		} else {
 			// Resize + rotate via polar coords, offset-corrected so no snap on grab
-			const dx = mx - d.centerX;
-			const dy = my - d.centerY;
-			const newSize  = Math.max(0.05, round3(Math.hypot(dx, dy) / HR + d.sizeOffset));
-			const newAngle = round3(Math.atan2(dy, dx) * 180 / Math.PI + d.angleOffset);
+			const ddx = mx - d.centerX;
+			const ddy = my - d.centerY;
+			const rawSize  = Math.max(0.05, Math.hypot(ddx, ddy) / HR + d.sizeOffset);
+			const rawAngle = Math.atan2(ddy, ddx) * 180 / Math.PI + d.angleOffset;
+			const newSize  = round3(snapTo(rawSize,  0.25, shift));
+			const newAngle = round3(snapTo(rawAngle, 15,   shift));
 			shapes = shapes.map((s, i) => {
 				if (i !== d.idx) return s;
 				if (s.type === 'circle') return { ...s, size: newSize } as HatShape;
@@ -478,7 +488,7 @@
 							<input class="hb-slider" type="range" min="10" max="360" step="5"
 								value={sp}
 								onpointerdown={snap}
-								oninput={(e) => updateShape(i, { span: parseInt((e.target as HTMLInputElement).value) })}
+								oninput={(e) => { const v = parseInt((e.target as HTMLInputElement).value); updateShape(i, { span: e.shiftKey ? Math.round(v / 15) * 15 : v }); }}
 							/>
 							<span class="hb-val">{sp}°</span>
 						</label>
@@ -492,7 +502,7 @@
 							<input class="hb-slider" type="range" min="0.1" max="5" step="0.05"
 								value={asp}
 								onpointerdown={snap}
-								oninput={(e) => updateShape(i, { aspect: parseFloat((e.target as HTMLInputElement).value) })}
+								oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); updateShape(i, { aspect: e.shiftKey ? Math.round(v * 2) / 2 : v }); }}
 							/>
 							<span class="hb-val">{asp.toFixed(2)}</span>
 						</label>
@@ -506,7 +516,7 @@
 							<input class="hb-slider" type="range" min="-2" max="2" step="0.05"
 								value={bow}
 								onpointerdown={snap}
-								oninput={(e) => updateShape(i, { curvature: parseFloat((e.target as HTMLInputElement).value) })}
+								oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); updateShape(i, { curvature: e.shiftKey ? Math.round(v * 4) / 4 : v }); }}
 							/>
 							<span class="hb-val">{bow.toFixed(2)}</span>
 						</label>
@@ -518,7 +528,7 @@
 						<input class="hb-slider" type="range" min="1" max="10" step="0.5"
 							value={(s as {thickness?: number}).thickness ?? 1}
 							onpointerdown={snap}
-							oninput={(e) => updateShape(i, { thickness: parseFloat((e.target as HTMLInputElement).value) })}
+							oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); updateShape(i, { thickness: e.shiftKey ? Math.round(v) : v }); }}
 						/>
 						<span class="hb-val">{(s as {thickness?: number}).thickness ?? 1}px</span>
 					</label>
