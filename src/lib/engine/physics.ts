@@ -16,27 +16,8 @@
 import type { Stickman } from './stickman.js';
 import type { JointName, Pose, SurfaceQuery, NavSurface } from './types.js';
 import { JOINT_NAMES, BONES } from './types.js';
-
-const GRAVITY = 0.0012;
-const AIR_DRAG = 0.998;
-const RAGDOLL_GRAVITY = 0.0015;
-const RAGDOLL_DAMPING = 0.96;
-const RAGDOLL_CONSTRAINT_ITERATIONS = 3;
-const RAGDOLL_IMPACT_THRESHOLD = 0.4;
-const RAGDOLL_RECOVERY_DELAY = 300;
-const SURFACE_SEARCH_RADIUS = 200;
-
-/** Fraction of vertical velocity reflected on surface collision (bounce) */
-const RAGDOLL_RESTITUTION = 0.3;
-
-/** Squared velocity threshold below which the ragdoll is considered motionless */
-const MOTIONLESS_THRESHOLD_SQ = 0.5;
-
-/** How long (ms) a ragdoll must be motionless before force-recovering */
-const RAGDOLL_MOTIONLESS_TIMEOUT = 1500;
-
-/** Margin beyond container bounds before triggering a reset */
-const OOB_MARGIN = 50;
+import type { PhysicsConfig } from './config.js';
+import { DEFAULT_CONFIG } from './config.js';
 
 interface RagdollJoint {
 	name: JointName;
@@ -54,6 +35,7 @@ export interface ContainerBounds {
 export class StickmanPhysics {
 	private fig: Stickman;
 	findSurface: SurfaceQuery;
+	private c: PhysicsConfig;
 
 	vx = 0;
 	vy = 0;
@@ -75,9 +57,15 @@ export class StickmanPhysics {
 
 	onLanded: (() => void) | null = null;
 
-	constructor(fig: Stickman, findSurface: SurfaceQuery) {
+	constructor(fig: Stickman, findSurface: SurfaceQuery, physicsConfig?: PhysicsConfig) {
 		this.fig = fig;
 		this.findSurface = findSurface;
+		this.c = physicsConfig ?? DEFAULT_CONFIG.physics;
+	}
+
+	/** Replace the physics config at runtime (e.g. after a reactive update). */
+	updateConfig(physicsConfig: PhysicsConfig): void {
+		this.c = physicsConfig;
 	}
 
 	applyImpulse(ivx: number, ivy: number): void {
@@ -160,20 +148,20 @@ export class StickmanPhysics {
 		}
 
 		// Apply gravity
-		this.vy += GRAVITY * dt;
+		this.vy += this.c.gravity * dt;
 		this.fig.x += this.vx * dt;
 		this.fig.y += this.vy * dt;
-		this.vx *= AIR_DRAG;
+		this.vx *= this.c.airDrag;
 		if (Math.abs(this.vx) < 0.001) this.vx = 0;
 
 		// Surface detection (falling)
 		if (this.vy >= 0) {
-			const surface = this.findSurface(this.fig.x, this.fig.y, SURFACE_SEARCH_RADIUS);
+			const surface = this.findSurface(this.fig.x, this.fig.y, this.c.surfaceSearchRadius);
 			if (surface && this.fig.y >= surface.y) {
 				if (this.fig.x >= surface.xMin && this.fig.x <= surface.xMax) {
 					this.fig.y = surface.y;
 
-					if (this.vy > RAGDOLL_IMPACT_THRESHOLD) {
+					if (this.vy > this.c.ragdollImpactThreshold) {
 						this.startRagdoll(this.vx * 0.5, -this.vy * 0.2);
 					} else {
 						this.vy = 0;
@@ -227,16 +215,16 @@ export class StickmanPhysics {
 
 		// Verlet integration
 		for (const j of joints) {
-			const vx = (j.x - j.prevX) * RAGDOLL_DAMPING;
-			const vy = (j.y - j.prevY) * RAGDOLL_DAMPING;
+			const vx = (j.x - j.prevX) * this.c.ragdollDamping;
+			const vy = (j.y - j.prevY) * this.c.ragdollDamping;
 			j.prevX = j.x;
 			j.prevY = j.y;
 			j.x += vx;
-			j.y += vy + RAGDOLL_GRAVITY * normalDt * normalDt * 100;
+			j.y += vy + this.c.ragdollGravity * normalDt * normalDt * 100;
 		}
 
 		// Distance constraints
-		for (let iter = 0; iter < RAGDOLL_CONSTRAINT_ITERATIONS; iter++) {
+		for (let iter = 0; iter < this.c.ragdollConstraintIterations; iter++) {
 			for (const [aName, bName] of BONES) {
 				const a = joints.find((j) => j.name === aName)!;
 				const b = joints.find((j) => j.name === bName)!;
@@ -265,8 +253,8 @@ export class StickmanPhysics {
 			if (surface && j.y > surface.y && j.x >= surface.xMin && j.x <= surface.xMax) {
 				const vy = j.y - j.prevY; // current vertical velocity
 				j.y = surface.y;
-				// Reflect a fraction of the velocity for bounce
-				j.prevY = j.y + vy * RAGDOLL_RESTITUTION;
+			// Reflect a fraction of the velocity for bounce
+			j.prevY = j.y + vy * this.c.ragdollRestitution;
 				// Friction on horizontal velocity
 				j.prevX = j.x - (j.x - j.prevX) * 0.7;
 
@@ -289,7 +277,7 @@ export class StickmanPhysics {
 		// Feet-on-surface recovery (original logic)
 		if (feetGrounded >= 1) {
 			this.ragdollGroundTimer += dt;
-			if (this.ragdollGroundTimer > RAGDOLL_RECOVERY_DELAY) {
+			if (this.ragdollGroundTimer > this.c.ragdollRecoveryDelay) {
 				this.recoverFromRagdoll();
 				return;
 			}
@@ -305,9 +293,9 @@ export class StickmanPhysics {
 			return sum + vx * vx + vy * vy;
 		}, 0);
 
-		if (totalVelocitySq < MOTIONLESS_THRESHOLD_SQ) {
+		if (totalVelocitySq < this.c.motionlessThresholdSq) {
 			this.ragdollMotionlessTimer += dt;
-			if (this.ragdollMotionlessTimer > RAGDOLL_MOTIONLESS_TIMEOUT) {
+			if (this.ragdollMotionlessTimer > this.c.ragdollMotionlessTimeout) {
 				this.resetToNearestSurface();
 				return;
 			}
@@ -355,10 +343,11 @@ export class StickmanPhysics {
 	private isOutOfBounds(): boolean {
 		if (!this.containerBounds) return false;
 		const { x, y } = this.fig;
+		const margin = this.c.oobMargin;
 		return (
-			x < -OOB_MARGIN ||
-			x > this.containerBounds.width + OOB_MARGIN ||
-			y > this.containerBounds.height + OOB_MARGIN
+			x < -margin ||
+			x > this.containerBounds.width + margin ||
+			y > this.containerBounds.height + margin
 			// Don't check y < 0 — stickmen can briefly be above during jumps
 		);
 	}

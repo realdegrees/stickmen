@@ -14,14 +14,14 @@ import type { NavGrid } from './navgrid.js';
 import { findRandomPath, findPath, findPathAway } from './pathfinder.js';
 import type { NavPath, Point, Renderable } from './types.js';
 import type { BehaviorHandle, StickmanBehavior } from './behaviors/types.js';
-
-const SPRINT_MIN_WALK_EDGES = 3;
-const SPRINT_SPEED_FACTOR = 1.5;
+import type { StaminaConfig } from './config.js';
+import { DEFAULT_CONFIG } from './config.js';
 
 export class StickmanController {
 	readonly executor: PathExecutor;
 	readonly stamina: Stamina;
 	private grid: NavGrid;
+	private sc: StaminaConfig;
 
 	private activeBehavior: StickmanBehavior | null = null;
 	private behaviorHandle: BehaviorHandle | null = null;
@@ -30,14 +30,21 @@ export class StickmanController {
 
 	debug = false;
 
-	constructor(actions: StickmanActions, physics: StickmanPhysics, grid: NavGrid) {
+	constructor(actions: StickmanActions, physics: StickmanPhysics, grid: NavGrid, staminaConfig?: StaminaConfig) {
+		this.sc = staminaConfig ?? DEFAULT_CONFIG.stamina;
 		this.executor = new PathExecutor(actions, physics, grid);
-		this.stamina = new Stamina();
+		this.stamina = new Stamina(this.sc);
 		this.grid = grid;
 
 		this.executor.onPathComplete = () => {
 			this.sprintIntent = false;
 		};
+	}
+
+	/** Replace the stamina config at runtime (e.g. after a reactive update). */
+	updateConfig(staminaConfig: StaminaConfig): void {
+		this.sc = staminaConfig;
+		this.stamina.updateConfig(staminaConfig);
 	}
 
 	// ── Behavior API ─────────────────────────────────────────────────
@@ -155,7 +162,7 @@ export class StickmanController {
 
 		if (this.stamina.sprinting) {
 			const fig = this.executor.fig;
-			this.executor.sprintSpeed = fig.speedMultiplier * SPRINT_SPEED_FACTOR;
+			this.executor.sprintSpeed = fig.speedMultiplier * this.sc.sprintSpeedFactor;
 			this.executor.sprintAnimId = 'walk';
 		} else {
 			this.executor.sprintSpeed = null;
@@ -170,7 +177,7 @@ export class StickmanController {
 		for (let i = this.executor.currentStepIndex; i < path.edges.length; i++) {
 			if (path.edges[i].type === 'walk') {
 				consecutiveWalks++;
-				if (consecutiveWalks >= SPRINT_MIN_WALK_EDGES) return true;
+				if (consecutiveWalks >= this.sc.sprintMinWalkEdges) return true;
 			} else {
 				break;
 			}

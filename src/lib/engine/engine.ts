@@ -7,7 +7,6 @@
 
 import { CanvasRenderer } from './renderer.js';
 import { NavGrid } from './navgrid.js';
-import type { NavGridConfig } from './navgrid.js';
 import { Stickman, createStickman } from './stickman.js';
 import { AnimationRegistry } from './animations/registry.js';
 import type { AnimationResolver } from './animations/types.js';
@@ -17,7 +16,8 @@ import { StickmanActions } from './actions.js';
 import { StickmanPhysics } from './physics.js';
 import { StickmanController } from './controller.js';
 import type { ColorInput, HSL, BodyScale, Point, Renderable, PostProcessFn, StickmanSnapshot } from './types.js';
-import { resolveColor, MAX_BODY_SCALE } from './types.js';
+import { resolveColor } from './types.js';
+import { type DeepPartial, type ResolvedStickmenConfig, type StickmenConfig, resolveConfig, DEFAULT_CONFIG } from './config.js';
 import type { EventEmitter, StickmanEventMap } from '../events.js';
 import type { StickmanBehavior, BehaviorInput } from './behaviors/types.js';
 
@@ -74,14 +74,34 @@ export class StickmenEngine {
 
 	private _postProcessFn: PostProcessFn | null = null;
 
-	// Grid config
-	private gridConfig: NavGridConfig;
+	private _config: ResolvedStickmenConfig;
 
-	constructor(gridConfig: NavGridConfig = {}) {
-		this.gridConfig = gridConfig;
-		this.grid = new NavGrid(gridConfig);
+	constructor(config?: DeepPartial<StickmenConfig>) {
+		this._config = resolveConfig(config);
+		this.grid = new NavGrid(this._config);
 		this.animationRegistry = new AnimationRegistry();
 		this.hatRegistry = new HatRegistry();
+	}
+
+	/** Update the engine config at runtime. Triggers a navgrid rebuild and
+	 *  propagates physics/stamina values to all active stickmen. */
+	updateConfig(partial: DeepPartial<StickmenConfig>): void {
+		this._config = resolveConfig(partial);
+		this.grid.updateConfig(this._config);
+
+		// Propagate physics and stamina to all existing stickmen
+		for (const entry of this.stickmen.values()) {
+			entry.physics.updateConfig(this._config.physics);
+			entry.controller.updateConfig(this._config.stamina);
+		}
+
+		if (this._initialized) {
+			this.rebuildGrid();
+		}
+	}
+
+	get config(): ResolvedStickmenConfig {
+		return this._config;
 	}
 
 	// ── Initialization ───────────────────────────────────────────────
@@ -293,7 +313,7 @@ export class StickmenEngine {
 			(fig as { speedMultiplier: number }).speedMultiplier = options.speed;
 		}
 		if (options.bodyScale) {
-			const clamp = (v: number) => Math.max(0.5, Math.min(v, MAX_BODY_SCALE));
+			const clamp = (v: number) => Math.max(0.5, Math.min(v, this._config.stickman.maxBodyScale));
 			const s = fig.bodyScale;
 			if (options.bodyScale.legLength !== undefined) (s as { legLength: number }).legLength = clamp(options.bodyScale.legLength);
 			if (options.bodyScale.armLength !== undefined) (s as { armLength: number }).armLength = clamp(options.bodyScale.armLength);
@@ -302,11 +322,11 @@ export class StickmenEngine {
 
 		const actions = new StickmanActions(fig);
 		const surfaceQuery = this.grid.getSurfaceQuery();
-		const physics = new StickmanPhysics(fig, surfaceQuery);
+		const physics = new StickmanPhysics(fig, surfaceQuery, this._config.physics);
 		physics.surfaces = this.grid.surfaces;
 		const bounds = this.getContainerBounds();
 		if (bounds) physics.containerBounds = bounds;
-		const controller = new StickmanController(actions, physics, this.grid);
+		const controller = new StickmanController(actions, physics, this.grid, this._config.stamina);
 
 		if (this.debug) controller.debug = true;
 

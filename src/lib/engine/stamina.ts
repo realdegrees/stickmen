@@ -1,8 +1,11 @@
 /**
  * Stamina — Per-stickman sprint resource.
  *
- * Sprint starts at >= 80%, stops at 50%, cooldown until 80%.
+ * Sprint starts at >= sprintStart, stops at sprintStop, cooldown until sprintStart.
  */
+
+import type { StaminaConfig } from './config.js';
+import { DEFAULT_CONFIG } from './config.js';
 
 export type StaminaActivity = 'idle' | 'moving' | 'sprinting';
 
@@ -11,39 +14,42 @@ export class Stamina {
 	sprinting = false;
 
 	private cooldown = false;
+	private c: StaminaConfig;
 
-	readonly DRAIN_RATE = 0.2;
-	readonly REGEN_BASE = 0.1;
-	readonly REGEN_ACTIVE = 0.2;
+	constructor(config?: StaminaConfig) {
+		this.c = config ?? DEFAULT_CONFIG.stamina;
+	}
 
-	readonly SPRINT_START = 0.8;
-	readonly SPRINT_STOP = 0.5;
+	/** Replace the stamina config at runtime (e.g. after a reactive update). */
+	updateConfig(config: StaminaConfig): void {
+		this.c = config;
+	}
 
 	update(dt: number, activity: StaminaActivity): void {
 		const seconds = dt / 1000;
 
 		if (activity === 'sprinting') {
-			this.value -= this.DRAIN_RATE * seconds;
+			this.value -= this.c.drainRate * seconds;
 
 			if (this.value <= 0) {
 				this.value = 0;
 				this.sprinting = false;
 				this.cooldown = true;
-			} else if (this.value <= this.SPRINT_STOP) {
+			} else if (this.value <= this.c.sprintStop) {
 				this.sprinting = false;
 				this.cooldown = true;
 			}
 		} else {
-			const rate = activity === 'moving' ? this.REGEN_ACTIVE : this.REGEN_BASE;
+			const rate = activity === 'moving' ? this.c.regenActive : this.c.regenBase;
 			this.value = Math.min(1.0, this.value + rate * seconds);
 
-			if (this.cooldown && this.value >= this.SPRINT_START) {
+			if (this.cooldown && this.value >= this.c.sprintStart) {
 				this.cooldown = false;
 			}
 		}
 	}
 
 	canSprint(): boolean {
-		return !this.cooldown && this.value >= this.SPRINT_START;
+		return !this.cooldown && this.value >= this.c.sprintStart;
 	}
 }

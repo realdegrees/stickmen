@@ -9,6 +9,7 @@
 	import { WanderBehavior } from './engine/behaviors/defaults.js';
 	import type { BehaviorInput, StickmanBehavior } from './engine/behaviors/types.js';
 	import type { Snippet } from 'svelte';
+	import type { DeepPartial, StickmenConfig } from './engine/config.js';
 
 	function resolveBehavior(input: BehaviorInput | undefined): StickmanBehavior {
 		if (!input) return new WanderBehavior();
@@ -17,8 +18,8 @@
 	}
 
 	interface Props {
-		selector?: string;
-		ignoreSelector?: string;
+		/** Typed configuration object for all engine constants (navgrid, physics, stamina, stickman size). */
+		config?: DeepPartial<StickmenConfig>;
 		debug?: boolean;
 		paused?: boolean;
 		animations?: AnimationResolver[];
@@ -32,8 +33,7 @@
 	}
 
 	let {
-		selector = '[data-walkable]',
-		ignoreSelector = undefined,
+		config = undefined,
 		debug = false,
 		paused = false,
 		animations = undefined,
@@ -63,6 +63,20 @@
 
 	$effect(() => {
 		if (engine) engine.setPostProcess(postProcess ?? null);
+	});
+
+	// Guard: only call updateConfig when config content actually changes.
+	// Inline object literals in the parent template create new references on
+	// every render, so we JSON-compare to avoid unnecessary navgrid rebuilds.
+	let _configJson = '';
+	$effect(() => {
+		if (engine && config !== undefined) {
+			const next = JSON.stringify(config);
+			if (next !== _configJson) {
+				_configJson = next;
+				engine.updateConfig(config);
+			}
+		}
 	});
 
 	// ── Public API (via bind:this) ───────────────────────────────
@@ -119,10 +133,7 @@
 	// ── Lifecycle ────────────────────────────────────────────────
 
 	onMount(() => {
-		engine = new StickmenEngine({
-			selector,
-			ignoreSelector,
-		});
+		engine = new StickmenEngine(config);
 
 		engine.defaultProximityThreshold = proximityThreshold;
 

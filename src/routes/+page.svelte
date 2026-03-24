@@ -9,6 +9,7 @@
 	let jumpStage: ReturnType<typeof StickmenStage>;
 	let ropeVStage: ReturnType<typeof StickmenStage>;
 	let swingStage: ReturnType<typeof StickmenStage>;
+	let configStage: ReturnType<typeof StickmenStage>;
 	let playground: ReturnType<typeof StickmenStage>;
 
 	// ── Global state ─────────────────────────────────────────────────
@@ -31,6 +32,17 @@
 		jumpStage.spawn({ behavior: Behaviours.Follow, color: 'violet' });
 		ropeVStage.spawn({ behavior: Behaviours.Follow, color: 'orange' });
 		swingStage.spawn({ behavior: Behaviours.Follow, color: 'magenta' });
+		configStage.spawn({
+			behavior: Behaviours.Follow,
+			color: 'green',
+			bodyScale: { legLength: 2.0, armLength: 2.0, headSize: 2.0 },
+			speed: 1.5
+		});
+		configStage.spawn({
+			behavior: Behaviours.Idle,
+			color: 'cyan',
+			bodyScale: { legLength: 0.5, armLength: 0.5, headSize: 0.5 }
+		});
 	});
 
 	function spawnWanderer() {
@@ -86,7 +98,7 @@
 		onmouseleave={() => hoveredSection = null}
 	>
 		<h2 class="demo-label">Walking</h2>
-		<StickmenStage bind:this={walkStage} selector="[data-walkable]" debug={debugFor('walk')}>
+		<StickmenStage bind:this={walkStage} debug={debugFor('walk')}>
 			<div class="demo-walk">
 				<div class="card" data-walkable="top">
 					<h3>Surface Traversal</h3>
@@ -106,7 +118,7 @@
 		onmouseleave={() => hoveredSection = null}
 	>
 		<h2 class="demo-label">Jumping</h2>
-		<StickmenStage bind:this={jumpStage} selector="[data-walkable]" debug={debugFor('jump')}>
+		<StickmenStage bind:this={jumpStage} debug={debugFor('jump')}>
 			<div class="demo-jump">
 				<div class="jump-row">
 					<div class="card small" data-walkable="top">
@@ -136,7 +148,7 @@
 		onmouseleave={() => hoveredSection = null}
 	>
 		<h2 class="demo-label">Rope — Vertical Traversal</h2>
-		<StickmenStage bind:this={ropeVStage} selector="[data-walkable]" debug={debugFor('rope-v')}>
+		<StickmenStage bind:this={ropeVStage} debug={debugFor('rope-v')}>
 			<div class="demo-rope-v">
 				<div class="card rope-card" data-walkable="bottom">
 					<h3>Rappel Down</h3>
@@ -160,7 +172,7 @@
 		onmouseleave={() => hoveredSection = null}
 	>
 		<h2 class="demo-label">Rope — Horizontal Swing</h2>
-		<StickmenStage bind:this={swingStage} selector="[data-walkable]" debug={debugFor('swing')}>
+		<StickmenStage bind:this={swingStage} debug={debugFor('swing')}>
 			<div class="demo-swing">
 				<div class="platform" data-walkable="bottom">
 					<h3>Rope Swing</h3>
@@ -172,6 +184,47 @@
 				</div>
 			</div>
 		</StickmenStage>
+	</section>
+
+	<!-- ── Per-Container Config ──────────────────────────────────── -->
+
+	<section
+		class="demo-section"
+		role="group"
+		aria-label="Per-container config demo"
+		onmouseenter={() => hoveredSection = 'config'}
+		onmouseleave={() => hoveredSection = null}
+	>
+		<h2 class="demo-label">Per-Container Config</h2>
+		<StickmenStage
+			bind:this={configStage}
+			config={{
+				stickman: { maxBodyScale: 2.0 },
+				navgrid: { jumpMaxGap: 220, nodeSpacing: 55 },
+				stamina: { sprintSpeedFactor: 2.5, sprintMinWalkEdges: 2 }
+			}}
+			debug={debugFor('config')}
+		>
+			<div class="demo-config-stage">
+				<div class="config-platform" data-walkable="bottom"></div>
+				<div class="config-platform" data-walkable="bottom"></div>
+			</div>
+		</StickmenStage>
+
+		<div class="config-info-stack">
+			<div class="card">
+				<h3>Per-Container Config</h3>
+				<p>Each <code>&lt;StickmenStage&gt;</code> accepts a typed <code>config</code> prop covering navgrid geometry, jump distances, physics constants, and stamina tuning. Multiple stages on the same page are fully independent — this one runs with a larger stickman and a wider jump gap than any of the others.</p>
+			</div>
+			<div class="card">
+				<h3>Per-Stickman Options</h3>
+				<p>Individual stickmen have their own set of overrides at spawn time: body proportions, movement speed, color, behavior, hat, and proximity radius. The giant above was spawned at 2× scale with a custom speed.</p>
+			</div>
+			<div class="card">
+				<h3>Reactive &amp; Typed</h3>
+				<p>The config is a fully-typed <code>DeepPartial</code> — override only what you need, the rest falls back to defaults. Change the prop at runtime and the engine applies immediately without recreating the stage.</p>
+			</div>
+		</div>
 	</section>
 
 	<!-- ── Playground ─────────────────────────────────────────────── -->
@@ -204,7 +257,6 @@
 		</nav>
 		<StickmenStage
 			bind:this={playground}
-			selector="[data-walkable]"
 			debug={debugFor('playground')}
 			proximityThreshold={50}
 		>
@@ -685,6 +737,34 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		margin: 0 0 1.25rem;
 	}
 
+	/* ── Config override demo ────────────────────────────────────── */
+
+	.demo-config-stage {
+		display: flex;
+		justify-content: center;
+		gap: 190px;
+		padding-top: 40px;
+		padding-bottom: 0;
+	}
+
+	.config-platform {
+		width: 130px;
+		height: 90px;
+		background: #151515;
+		border: 1px solid #2c2c2c;
+		border-radius: 6px;
+		flex-shrink: 0;
+	}
+
+	.config-info-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+
+
 	/* ── Responsive ──────────────────────────────────────────────── */
 
 	@media (max-width: 700px) {
@@ -714,5 +794,12 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 		.platform {
 			width: 120px;
 		}
+
+		.demo-config-stage {
+			gap: 80px;
+			padding-top: 120px;
+		}
+
+
 	}
 </style>

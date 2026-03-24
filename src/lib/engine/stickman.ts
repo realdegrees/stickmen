@@ -6,7 +6,8 @@
  */
 
 import type { BodyScale, HSL, Joint, JointName, Pose, Renderable, StickmanConfig } from './types.js';
-import { BASE_BODY, BONES, JOINT_NAMES, MAX_BODY_SCALE, colorToHSL, colorToHSLA } from './types.js';
+import { BONES, JOINT_NAMES, colorToHSL, colorToHSLA } from './types.js';
+import { DEFAULT_CONFIG } from './config.js';
 import type { AnimationRegistry } from './animations/registry.js';
 import type { AnimationResolver } from './animations/types.js';
 import type { HatDef } from './hats.js';
@@ -127,7 +128,7 @@ export class Stickman implements Renderable {
 	}
 
 	private standingPose(): Pose {
-		const b = BASE_BODY;
+		const b = DEFAULT_CONFIG.stickman;
 		const s = this.bodyScale;
 		const upperLeg = b.upperLegLength * s.legLength;
 		const lowerLeg = b.lowerLegLength * s.legLength;
@@ -185,7 +186,7 @@ export class Stickman implements Renderable {
 
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
-		ctx.lineWidth = BASE_BODY.strokeWidth;
+		ctx.lineWidth = DEFAULT_CONFIG.stickman.strokeWidth;
 		ctx.strokeStyle = colorStr;
 
 		// Draw bones
@@ -200,7 +201,7 @@ export class Stickman implements Renderable {
 
 		// Draw head
 		const head = p.head;
-		const headRadius = BASE_BODY.headRadius * this.bodyScale.headSize;
+		const headRadius = DEFAULT_CONFIG.stickman.headRadius * this.bodyScale.headSize;
 		ctx.fillStyle = colorToHSLA(this.color, 0.3);
 		ctx.strokeStyle = colorStr;
 		ctx.beginPath();
@@ -243,7 +244,7 @@ export class Stickman implements Renderable {
 
 /** Clamp a body scale value to the supported range */
 function clampScale(v: number): number {
-	return Math.max(0.5, Math.min(v, MAX_BODY_SCALE));
+	return Math.max(0.5, Math.min(v, DEFAULT_CONFIG.stickman.maxBodyScale));
 }
 
 /** Create a stickman with randomized personality */

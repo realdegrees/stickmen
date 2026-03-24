@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { DefaultAnimations } from '$lib/index.js';
 	import { anglesToPose, resolveAnglesAtTime } from '$lib/engine/animations/resolver.js';
-	import { BASE_BODY, BONES } from '$lib/engine/types.js';
+	import { BONES } from '$lib/engine/types.js';
+	import { DEFAULT_CONFIG } from '$lib/engine/config.js';
 	import type { AnimKeyframe, JointAngles, EasingType, Pose } from '$lib/index.js';
 	import { createHistory } from '$lib/history.js';
 	import JsonModal from './JsonModal.svelte';
@@ -429,7 +430,7 @@
 			ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
 		}
 		const hd = { x: MCX + pose.head.x * MSCALE, y: MCY + pose.head.y * MSCALE };
-		ctx.beginPath(); ctx.arc(hd.x, hd.y, BASE_BODY.headRadius * MSCALE, 0, Math.PI * 2);
+		ctx.beginPath(); ctx.arc(hd.x, hd.y, DEFAULT_CONFIG.stickman.headRadius * MSCALE, 0, Math.PI * 2);
 		ctx.fill(); ctx.stroke();
 		ctx.restore();
 	}

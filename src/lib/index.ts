@@ -24,6 +24,19 @@ export const Behaviours = {
 	Idle: IdleBehavior
 } as const;
 
+// ── Config ───────────────────────────────────────────────────────────
+export type {
+	StickmenConfig,
+	DeepPartial,
+	StickmanSizeConfig,
+	NavGridConfig,
+	PhysicsConfig,
+	StaminaConfig,
+	ResolvedStickmenConfig,
+	ResolvedNavGridConfig
+} from './engine/config.js';
+export { DEFAULT_CONFIG, resolveConfig, computeStickmanMaxHeight, computeStickmanHalfWidth } from './engine/config.js';
+
 // ── Types ────────────────────────────────────────────────────────────
 export type {
 	ColorInput,

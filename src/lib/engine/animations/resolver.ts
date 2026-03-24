@@ -7,7 +7,8 @@
 import type { AnimationContext, AnimationResolver, AnimKeyframe, EasingType, KeyframeAnimationDef } from './types.js';
 import type { JointAngles } from './types.js';
 import type { BodyScale, Pose } from '../types.js';
-import { BASE_BODY, jointFromAngle } from '../types.js';
+import { jointFromAngle } from '../types.js';
+import { DEFAULT_CONFIG } from '../config.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -137,7 +138,7 @@ export function anglesToPose(
 	offsetX: number,
 	offsetY: number
 ): Pose {
-	const b = BASE_BODY;
+	const b = DEFAULT_CONFIG.stickman;
 	const legLen = (b.upperLegLength + b.lowerLegLength) * scale.legLength;
 	const torsoLen = b.torsoLength;
 	const neckLen = b.neckLength;

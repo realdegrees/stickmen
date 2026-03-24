@@ -6,37 +6,7 @@
  */
 
 import type { NavSurface, NavNode, NavEdge, Surface, SurfaceQuery } from './types.js';
-import { BASE_BODY, STICKMAN_MAX_HEIGHT, STICKMAN_HALF_WIDTH } from './types.js';
-
-// ── Constants (derived from body dimensions where possible) ──────────
-
-const ROPE_LAYER_PENALTY = 150;
-const MIN_ELEMENT_WIDTH = 15;
-const NODE_SPACING = 40;
-const MIN_BORDER_WIDTH = 0.5;
-
-/** Minimum distance from container top for a walkable surface.
- *  Full body height + head clearance so the stickman doesn't clip. */
-const TOP_MARGIN = STICKMAN_MAX_HEIGHT + BASE_BODY.headRadius;
-const JUMP_MAX_GAP = 100;
-const JUMP_MAX_DY = STICKMAN_MAX_HEIGHT * 2;
-/** Number of segments to divide the overlap region into for interior jump points */
-const JUMP_CONNECTION_SEGMENTS = 4;
-const ROPE_HORIZONTAL_MARGIN = NODE_SPACING * 0.8;
-const TALL_ELEMENT_THRESHOLD = STICKMAN_MAX_HEIGHT * 3;
-const SURFACE_MERGE_GAP = 15;
-const SURFACE_MERGE_Y_TOLERANCE = 2;
-
-// ── Config ───────────────────────────────────────────────────────────
-
-export interface NavGridConfig {
-	/** CSS selector for walkable elements (default: '[data-walkable]') */
-	selector?: string;
-	/** CSS selector to exclude */
-	ignoreSelector?: string;
-	/** When true, scan all elements for visible borders */
-	autoDetectBorders?: boolean;
-}
+import { type ResolvedStickmenConfig, computeStickmanHalfWidth, resolveConfig } from './config.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -51,21 +21,21 @@ function isEligible(el: Element): boolean {
 	return true;
 }
 
-function hasVisibleBottomBorder(el: Element): boolean {
+function hasVisibleBottomBorder(el: Element, minBorderWidth: number): boolean {
 	const style = window.getComputedStyle(el);
 	const width = parseFloat(style.borderBottomWidth) || 0;
-	if (width < MIN_BORDER_WIDTH) return false;
+	if (width < minBorderWidth) return false;
 	if (style.borderBottomStyle === 'none' || style.borderBottomStyle === 'hidden') return false;
 	const color = style.borderBottomColor;
 	if (color === 'transparent' || color === 'rgba(0, 0, 0, 0)') return false;
 	return true;
 }
 
-function hasVisibleBorder(el: Element): { hasTop: boolean; hasBottom: boolean } {
+function hasVisibleBorder(el: Element, minBorderWidth: number): { hasTop: boolean; hasBottom: boolean } {
 	const style = window.getComputedStyle(el);
 
 	const isVisible = (w: number, s: string, c: string) => {
-		if (w < MIN_BORDER_WIDTH) return false;
+		if (w < minBorderWidth) return false;
 		if (s === 'none' || s === 'hidden') return false;
 		if (c === 'transparent' || c === 'rgba(0, 0, 0, 0)') return false;
 		return true;
@@ -110,7 +80,7 @@ export class NavGrid {
 	nodes: NavNode[] = [];
 	edges: NavEdge[] = [];
 
-	private config: NavGridConfig;
+	private config: ResolvedStickmenConfig;
 	private nodeMap = new Map<string, NavNode>();
 	private adjacency = new Map<string, NavEdge[]>();
 
@@ -119,7 +89,12 @@ export class NavGrid {
 	private containerRect = { left: 0, top: 0 };
 	private containerSize = { width: 0, height: 0 };
 
-	constructor(config: NavGridConfig = {}) {
+	constructor(config?: ResolvedStickmenConfig) {
+		this.config = config ?? resolveConfig();
+	}
+
+	/** Replace the config (e.g. after a reactive update) without recreating the grid object. */
+	updateConfig(config: ResolvedStickmenConfig): void {
 		this.config = config;
 	}
 
@@ -168,9 +143,10 @@ export class NavGrid {
 		this.adjacency.clear();
 		this.containerRect = { left: 0, top: 0 };
 
+		const { minElementWidth } = this.config.navgrid;
 		let surfaceId = 0;
 		for (const rect of rects) {
-			if (rect.width >= MIN_ELEMENT_WIDTH) {
+			if (rect.width >= minElementWidth) {
 				this.surfaces.push({
 					id: `s${surfaceId++}`,
 					edge: 'top',
@@ -234,8 +210,8 @@ export class NavGrid {
 	private queryElements(): Set<Element> {
 		if (!this.container) return new Set();
 
+		const { selector, autoDetectBorders, ignoreSelector } = this.config.navgrid;
 		const elements = new Set<Element>();
-		const selector = this.config.selector ?? '[data-walkable]';
 
 		// Scan for matching elements within the container
 		for (const el of this.container.querySelectorAll(selector)) {
@@ -243,16 +219,16 @@ export class NavGrid {
 		}
 
 		// Auto-detect borders mode
-		if (this.config.autoDetectBorders) {
+		if (autoDetectBorders) {
 			for (const el of this.container.querySelectorAll('*')) {
 				elements.add(el);
 			}
 		}
 
 		// Remove ignored elements
-		if (this.config.ignoreSelector) {
+		if (ignoreSelector) {
 			for (const el of elements) {
-				if (el.matches(this.config.ignoreSelector)) elements.delete(el);
+				if (el.matches(ignoreSelector)) elements.delete(el);
 			}
 		}
 
@@ -262,15 +238,20 @@ export class NavGrid {
 	// ── Surface Extraction ───────────────────────────────────────────
 
 	private extractSurfaces(elements: Iterable<Element>): void {
+		const ng = this.config.navgrid;
+		const { selector, autoDetectBorders, minElementWidth, minBorderWidth } = ng;
+		const topMargin = ng.topMargin;
+		const tallElementThreshold = ng.tallElementThreshold;
+		const stickmanHalfWidth = computeStickmanHalfWidth(this.config.stickman);
+
 		let surfaceId = 0;
-		const selector = this.config.selector ?? '[data-walkable]';
 
 		for (const el of elements) {
 			if (el.tagName === 'CANVAS') continue;
 			if (!isEligible(el)) continue;
 
 			const domRect = el.getBoundingClientRect();
-			if (domRect.width < MIN_ELEMENT_WIDTH) continue;
+			if (domRect.width < minElementWidth) continue;
 			if (domRect.width === 0 || domRect.height === 0) continue;
 
 			// Convert to container-relative coordinates
@@ -284,9 +265,9 @@ export class NavGrid {
 			};
 
 			// Inset surface edges from container sides so stickmen don't overflow
-			rect.left = Math.max(rect.left, STICKMAN_HALF_WIDTH);
-			rect.right = Math.min(rect.right, this.containerSize.width - STICKMAN_HALF_WIDTH);
-			if (rect.right - rect.left < MIN_ELEMENT_WIDTH) continue;
+			rect.left = Math.max(rect.left, stickmanHalfWidth);
+			rect.right = Math.min(rect.right, this.containerSize.width - stickmanHalfWidth);
+			if (rect.right - rect.left < minElementWidth) continue;
 			rect.width = rect.right - rect.left;
 
 			const forceInclude = el.matches(selector);
@@ -306,11 +287,11 @@ export class NavGrid {
 			if (explicitEdge) {
 				hasTop = walkableValue === 'top';
 				hasBottom = walkableValue === 'bottom';
-			} else if (!this.config.autoDetectBorders || forceInclude) {
+			} else if (!autoDetectBorders || forceInclude) {
 				hasTop = true;
-				hasBottom = hasVisibleBottomBorder(el);
+				hasBottom = hasVisibleBottomBorder(el, minBorderWidth);
 			} else {
-				const borders = hasVisibleBorder(el);
+				const borders = hasVisibleBorder(el, minBorderWidth);
 				hasTop = borders.hasTop;
 				hasBottom = borders.hasBottom;
 				if (!hasTop && !hasBottom) continue;
@@ -319,7 +300,7 @@ export class NavGrid {
 			// Per-surface top margin check — skip surfaces too close to
 			// the container top where the stickman body would overflow,
 			// but still allow the bottom edge of the same element
-			if (hasTop && rect.top >= TOP_MARGIN) {
+			if (hasTop && rect.top >= topMargin) {
 				this.surfaces.push({
 					id: `s${surfaceId++}`,
 					edge: 'top',
@@ -332,7 +313,7 @@ export class NavGrid {
 			}
 
 			if (hasBottom) {
-				if ((explicitEdge || !hasTop || rect.height >= TALL_ELEMENT_THRESHOLD) && rect.bottom >= TOP_MARGIN) {
+				if ((explicitEdge || !hasTop || rect.height >= tallElementThreshold) && rect.bottom >= topMargin) {
 					this.surfaces.push({
 						id: `s${surfaceId++}`,
 						edge: 'bottom',
@@ -350,6 +331,7 @@ export class NavGrid {
 	}
 
 	private mergeSurfaces(): void {
+		const { surfaceMergeYTolerance, surfaceMergeGap } = this.config.navgrid;
 		const merged: NavSurface[] = [];
 		const used = new Set<number>();
 		const sorted = [...this.surfaces].sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1);
@@ -364,10 +346,10 @@ export class NavGrid {
 				if (used.has(j)) continue;
 				const other = sorted[j];
 
-				if (Math.abs(other.y1 - current.y1) > SURFACE_MERGE_Y_TOLERANCE) break;
+				if (Math.abs(other.y1 - current.y1) > surfaceMergeYTolerance) break;
 
 				const gap = other.x1 - current.x2;
-				if (gap > SURFACE_MERGE_GAP) continue;
+				if (gap > surfaceMergeGap) continue;
 				if (gap < -other.rect.width) continue;
 
 				used.add(j);
@@ -385,11 +367,12 @@ export class NavGrid {
 	// ── Node Generation ──────────────────────────────────────────────
 
 	private generateNodes(): void {
+		const { nodeSpacing } = this.config.navgrid;
 		let nodeId = 0;
 
 		for (const surface of this.surfaces) {
 			const length = Math.abs(surface.x2 - surface.x1);
-			const nodeCount = Math.max(2, Math.floor(length / NODE_SPACING) + 1);
+			const nodeCount = Math.max(2, Math.floor(length / nodeSpacing) + 1);
 
 			for (let i = 0; i < nodeCount; i++) {
 				const t = i / (nodeCount - 1);
@@ -432,6 +415,8 @@ export class NavGrid {
 	}
 
 	private connectJumpEdges(): void {
+		const { jumpMaxGap, jumpMaxDy, nodeSpacing, jumpConnectionSegments } = this.config.navgrid;
+
 		// Index nodes by surface, sorted by x
 		const nodesBySurface = new Map<string, NavNode[]>();
 		for (const node of this.nodes) {
@@ -455,9 +440,9 @@ export class NavGrid {
 			if (!dst) return false;
 
 			const ndx = Math.abs(srcNode.x - dst.x);
-			if (ndx > JUMP_MAX_GAP) return false;
+			if (ndx > jumpMaxGap) return false;
 			const ndy = Math.abs(srcNode.y - dst.y);
-			if (ndy > JUMP_MAX_DY) return false;
+			if (ndy > jumpMaxDy) return false;
 
 			const pairKey =
 				srcNode.id < dst.id ? `${srcNode.id}:${dst.id}` : `${dst.id}:${srcNode.id}`;
@@ -480,9 +465,9 @@ export class NavGrid {
 			if (!src) return;
 
 			// Try connecting to the closest node to the left on the other surface
-			tryConnect(src, dstNodes, src.x - NODE_SPACING);
+			tryConnect(src, dstNodes, src.x - nodeSpacing);
 			// Try connecting to the closest node to the right on the other surface
-			tryConnect(src, dstNodes, src.x + NODE_SPACING);
+			tryConnect(src, dstNodes, src.x + nodeSpacing);
 			// Also try straight across (same X) for vertically-aligned surfaces
 			tryConnect(src, dstNodes, src.x);
 		};
@@ -493,7 +478,7 @@ export class NavGrid {
 				const sB = this.surfaces[j];
 
 				const dy = Math.abs(sA.y1 - sB.y1);
-				if (dy > JUMP_MAX_DY) continue;
+				if (dy > jumpMaxDy) continue;
 
 				const aLeft = Math.min(sA.x1, sA.x2);
 				const aRight = Math.max(sA.x1, sA.x2);
@@ -504,7 +489,7 @@ export class NavGrid {
 				const gapLeft = Math.max(aLeft, bLeft);
 				const gapRight = Math.min(aRight, bRight);
 				if (gapLeft > gapRight) {
-					if (gapLeft - gapRight > JUMP_MAX_GAP) continue;
+					if (gapLeft - gapRight > jumpMaxGap) continue;
 				}
 
 				const nodesA = nodesBySurface.get(sA.id);
@@ -512,8 +497,8 @@ export class NavGrid {
 				if (!nodesA || !nodesB || nodesA.length === 0 || nodesB.length === 0) continue;
 
 				// Jumpable region: where nodes on A could reach nodes on B
-				const regionLeft = Math.max(aLeft, bLeft) - JUMP_MAX_GAP;
-				const regionRight = Math.min(aRight, bRight) + JUMP_MAX_GAP;
+				const regionLeft = Math.max(aLeft, bLeft) - jumpMaxGap;
+				const regionRight = Math.min(aRight, bRight) + jumpMaxGap;
 				if (regionLeft >= regionRight) continue;
 
 				// 1. Edge connections: leftmost and rightmost of each surface
@@ -523,9 +508,9 @@ export class NavGrid {
 				connectBidirectional(nodesB, nodesB[nodesB.length - 1].x, nodesA);
 
 				// 2. Interior connections: divide overlap into segments
-				if (regionRight - regionLeft > NODE_SPACING * 2) {
-					for (let seg = 1; seg < JUMP_CONNECTION_SEGMENTS; seg++) {
-						const t = seg / JUMP_CONNECTION_SEGMENTS;
+				if (regionRight - regionLeft > nodeSpacing * 2) {
+					for (let seg = 1; seg < jumpConnectionSegments; seg++) {
+						const t = seg / jumpConnectionSegments;
 						const x = regionLeft + (regionRight - regionLeft) * t;
 						connectBidirectional(nodesA, x, nodesB);
 						connectBidirectional(nodesB, x, nodesA);
@@ -536,6 +521,8 @@ export class NavGrid {
 	}
 
 	private connectRopeEdges(): void {
+		const { ropeHorizontalMargin, jumpMaxDy, minElementWidth, ropeLayerPenalty } = this.config.navgrid;
+
 		// Build surface lookup for horizontal overlap checks
 		const surfaceMap = new Map<string, NavSurface>();
 		for (const s of this.surfaces) {
@@ -550,10 +537,10 @@ export class NavGrid {
 				if (a.surfaceId === b.surfaceId) continue;
 
 				const dx = Math.abs(a.x - b.x);
-				if (dx > ROPE_HORIZONTAL_MARGIN) continue;
+				if (dx > ropeHorizontalMargin) continue;
 
 				const dy = Math.abs(a.y - b.y);
-				if (dy <= JUMP_MAX_DY) continue;
+				if (dy <= jumpMaxDy) continue;
 
 				// Surfaces must overlap horizontally (not just edge-adjacent).
 				// This prevents diagonal rope edges between cards in a horizontal
@@ -562,7 +549,7 @@ export class NavGrid {
 				const surfB = surfaceMap.get(b.surfaceId);
 				if (surfA && surfB) {
 					const overlap = Math.min(surfA.x2, surfB.x2) - Math.max(surfA.x1, surfB.x1);
-					if (overlap < MIN_ELEMENT_WIDTH) continue;
+					if (overlap < minElementWidth) continue;
 				}
 
 				const minY = Math.min(a.y, b.y);
@@ -591,13 +578,15 @@ export class NavGrid {
 				if (skippedLayers > 2) continue;
 
 				const dist = Math.sqrt(dx * dx + dy * dy);
-				const cost = dist + skippedLayers * ROPE_LAYER_PENALTY;
+				const cost = dist + skippedLayers * ropeLayerPenalty;
 				this.addEdge(a.id, b.id, cost, 'rope');
 			}
 		}
 	}
 
 	private connectRopeSwingEdges(): void {
+		const { jumpMaxGap, jumpMaxDy } = this.config.navgrid;
+
 		// Index nodes by surface, sorted by x
 		const nodesBySurface = new Map<string, NavNode[]>();
 		for (const node of this.nodes) {
@@ -633,13 +622,13 @@ export class NavGrid {
 				if (!nodesBySurface.get(sB.id)?.length) continue;
 
 				const gap = sB.x1 - sA.x2;
-				if (gap <= JUMP_MAX_GAP) continue;
+				if (gap <= jumpMaxGap) continue;
 
 				// Record the x1 of the nearest group across the gap
 				if (nearestGroupX === Infinity) nearestGroupX = sB.x1;
 
 				// Stop scanning past the nearest platform group
-				if (sB.x1 > nearestGroupX + JUMP_MAX_GAP) break;
+				if (sB.x1 > nearestGroupX + jumpMaxGap) break;
 
 				// Check that no reachable surface overlaps with the gap region
 				let bridged = false;
@@ -649,8 +638,8 @@ export class NavGrid {
 					if (sM.x2 <= sA.x2 || sM.x1 >= sB.x1) continue;
 					// Surface must be reachable from either endpoint
 					if (
-						Math.abs(sM.y1 - sA.y1) < JUMP_MAX_DY * 3 ||
-						Math.abs(sM.y1 - sB.y1) < JUMP_MAX_DY * 3
+						Math.abs(sM.y1 - sA.y1) < jumpMaxDy * 3 ||
+						Math.abs(sM.y1 - sB.y1) < jumpMaxDy * 3
 					) {
 						bridged = true;
 						break;
@@ -692,6 +681,7 @@ export class NavGrid {
 		minY: number,
 		maxY: number
 	): number {
+		const { jumpMaxDy } = this.config.navgrid;
 		const ys: number[] = [];
 		for (const s of this.surfaces) {
 			if (s.id === surfaceIdA || s.id === surfaceIdB) continue;
@@ -705,7 +695,7 @@ export class NavGrid {
 		let layers = 1;
 		let groupY = ys[0];
 		for (let i = 1; i < ys.length; i++) {
-			if (ys[i] - groupY > JUMP_MAX_DY) {
+			if (ys[i] - groupY > jumpMaxDy) {
 				layers++;
 				groupY = ys[i];
 			}
