@@ -213,9 +213,16 @@ export class NavGrid {
 		const { selector, autoDetectBorders, ignoreSelector } = this.config.navgrid;
 		const elements = new Set<Element>();
 
-		// Scan for matching elements within the container
-		for (const el of this.container.querySelectorAll(selector)) {
+		// Always include elements with the built-in data-walkable attribute
+		for (const el of this.container.querySelectorAll('[data-walkable]')) {
 			elements.add(el);
+		}
+
+		// Additionally include elements matching the user's custom selector
+		if (selector) {
+			for (const el of this.container.querySelectorAll(selector)) {
+				elements.add(el);
+			}
 		}
 
 		// Auto-detect borders mode
@@ -270,7 +277,7 @@ export class NavGrid {
 			if (rect.right - rect.left < minElementWidth) continue;
 			rect.width = rect.right - rect.left;
 
-			const forceInclude = el.matches(selector);
+			const forceInclude = el.hasAttribute('data-walkable') || (selector && el.matches(selector));
 
 			let hasTop: boolean;
 			let hasBottom: boolean;

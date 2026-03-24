@@ -52,7 +52,12 @@ export interface StickmanSizeConfig {
 }
 
 export interface NavGridConfig {
-	/** CSS selector for walkable elements (default: '[data-walkable]') */
+	/**
+	 * Comma-separated list of additional CSS selectors for walkable elements.
+	 * Elements with the `data-walkable` attribute are always force-included
+	 * regardless of this value — use this to add extra elements by tag name,
+	 * class, or any other CSS selector (e.g. `'button,.tag,hr'`).
+	 */
 	selector: string;
 	/** CSS selector to exclude from scanning */
 	ignoreSelector?: string;
@@ -204,7 +209,7 @@ export const DEFAULT_CONFIG: StickmenConfig = {
 		maxBodyScale: 1.2
 	},
 	navgrid: {
-		selector: '[data-walkable]',
+		selector: '',
 		ignoreSelector: undefined,
 		autoDetectBorders: false,
 		nodeSpacing: 40,
