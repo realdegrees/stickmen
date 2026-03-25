@@ -60,6 +60,10 @@ export class WanderBehavior implements StickmanBehavior {
 				Math.random() * 1500 + 250
 			);
 		});
+		path.on('aborted', () => {
+			if (!this._active || this.fleeFrom) return;
+			this._wander(handle);
+		});
 	}
 }
 

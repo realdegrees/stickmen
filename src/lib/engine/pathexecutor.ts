@@ -18,6 +18,13 @@ export class PathExecutor {
 	private pathStepIndex = 0;
 	private stepExecuted = false;
 
+	/**
+	 * A recalculated path waiting to be swapped in after the current step finishes.
+	 * Set by `setPendingPath()` during navgrid rebuilds.
+	 */
+	private pendingPath: NavPath | null = null;
+	private pendingAbort = false;
+
 	sprintSpeed: number | null = null;
 	sprintAnimId: string = 'walk';
 
@@ -28,6 +35,7 @@ export class PathExecutor {
 	suspended = false;
 
 	onPathComplete: (() => void) | null = null;
+	onPathAborted: (() => void) | null = null;
 
 	constructor(actions: StickmanActions, physics: StickmanPhysics, grid: NavGrid) {
 		this.actions = actions;
@@ -59,12 +67,55 @@ export class PathExecutor {
 		this.currentPath = path;
 		this.pathStepIndex = 0;
 		this.stepExecuted = false;
+		this.pendingPath = null;
+		this.pendingAbort = false;
 	}
 
 	clearPath(): void {
 		this.currentPath = null;
 		this.pathStepIndex = 0;
 		this.stepExecuted = false;
+		this.pendingPath = null;
+		this.pendingAbort = false;
+	}
+
+	/**
+	 * Queue a recalculated path to swap in after the current step completes.
+	 * If `path` is null, the current path will be aborted after the step finishes.
+	 * If no action is currently running, the swap/abort happens immediately.
+	 */
+	setPendingPath(path: NavPath | null): void {
+		if (path) {
+			this.pendingPath = path;
+			this.pendingAbort = false;
+		} else {
+			this.pendingPath = null;
+			this.pendingAbort = true;
+		}
+
+		// If not mid-action, apply immediately
+		if (!this.actions.busy) {
+			this.applyPending();
+		}
+	}
+
+	/**
+	 * Apply a pending path swap or abort. Called either immediately from
+	 * setPendingPath (if idle) or from update() after the current step finishes.
+	 */
+	private applyPending(): void {
+		if (this.pendingPath) {
+			this.currentPath = this.pendingPath;
+			this.pathStepIndex = 0;
+			this.pendingPath = null;
+			this.pendingAbort = false;
+		} else if (this.pendingAbort) {
+			this.pendingAbort = false;
+			this.currentPath = null;
+			this.pathStepIndex = 0;
+			this.actions.fig.setState('idle');
+			this.onPathAborted?.();
+		}
 	}
 
 	update(dt: number): void {
@@ -100,8 +151,15 @@ export class PathExecutor {
 		if (!this.actions.busy) {
 			if (this.stepExecuted) {
 				this.snapToSurface();
-				this.pathStepIndex++;
 				this.stepExecuted = false;
+
+				// Check for a pending recalculated path (from a navgrid rebuild)
+				// before advancing the old path's step index.
+				if (this.pendingPath || this.pendingAbort) {
+					this.applyPending();
+				} else {
+					this.pathStepIndex++;
+				}
 			}
 
 			if (this.currentPath && this.pathStepIndex < this.currentPath.edges.length) {

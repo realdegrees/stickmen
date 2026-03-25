@@ -106,6 +106,13 @@ export class StickmanController {
 			this.currentPathHandle = null;
 			h?._emitArrived({ x: this.executor.fig.x, y: this.executor.fig.y });
 		};
+
+		this.executor.onPathAborted = () => {
+			this.sprintIntent = false;
+			const h = this.currentPathHandle;
+			this.currentPathHandle = null;
+			h?._emitAborted();
+		};
 	}
 
 	/** Replace the stamina config at runtime (e.g. after a reactive update). */
@@ -215,6 +222,38 @@ export class StickmanController {
 
 	get hasPath(): boolean {
 		return this.executor.hasPath;
+	}
+
+	/**
+	 * Called after a navgrid rebuild. Recalculates the active path (if any)
+	 * against the new grid, using the stickman's current step destination as
+	 * the "from" coordinate and the original path destination as "to".
+	 *
+	 * The recalculated path is queued as pending — the current in-progress
+	 * action (walk/jump) finishes normally, then the new path takes over.
+	 * If no route exists in the new grid, the path is aborted.
+	 */
+	onGridRebuilt(): void {
+		if (!this.executor.hasPath) return;
+
+		const path = this.executor.path!;
+		const destNode = path.nodes[path.nodes.length - 1];
+
+		// Determine where to pathfind "from":
+		// If mid-action, use the target of the current step (where the stickman
+		// is heading). Otherwise use the stickman's current position.
+		let fromX: number, fromY: number;
+		if (this.executor.actionBusy) {
+			const nextNode = path.nodes[this.executor.currentStepIndex + 1];
+			fromX = nextNode.x;
+			fromY = nextNode.y;
+		} else {
+			fromX = this.executor.fig.x;
+			fromY = this.executor.fig.y;
+		}
+
+		const newPath = findPath(this.grid, fromX, fromY, destNode.x, destNode.y);
+		this.executor.setPendingPath(newPath);
 	}
 
 	// ── Update ───────────────────────────────────────────────────────

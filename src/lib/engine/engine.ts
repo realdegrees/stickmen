@@ -242,6 +242,14 @@ export class StickmenEngine {
 			entry.physics.surfaces = this.grid.surfaces;
 			if (bounds) entry.physics.containerBounds = bounds;
 		}
+
+		// Recalculate active paths against the new grid.
+		// Stickmen mid-step finish their current action, then seamlessly
+		// pick up the recalculated path. If the destination is unreachable,
+		// the path is aborted and the behavior system can restart.
+		for (const entry of this.stickmen.values()) {
+			entry.controller.onGridRebuilt();
+		}
 	}
 
 	private getContainerBounds(): { width: number; height: number } | null {
