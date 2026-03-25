@@ -176,7 +176,7 @@ export class StickmenEngine {
 		this.mutationObserver = new MutationObserver(() => {
 			this.scheduleRebuild();
 		});
-		this.mutationObserver.observe(container, { childList: true, subtree: true });
+		this.mutationObserver.observe(container, { childList: true, characterData: true, subtree: true });
 
 		// Auto-rebuild when layout-affecting CSS transitions/animations settle.
 		// transitionend is filtered to layout properties only — cosmetic transitions
