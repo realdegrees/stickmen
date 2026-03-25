@@ -301,7 +301,27 @@ export class StickmanPhysics {
 		if (totalVelocitySq < this.c.motionlessThresholdSq) {
 			this.ragdollMotionlessTimer += dt;
 			if (this.ragdollMotionlessTimer > this.c.ragdollMotionlessTimeout) {
-				this.resetToNearestSurface();
+				// Stood still too long without feet landing on a surface.
+				// Try to stand up at current hip position rather than teleporting.
+				const hip = joints.find((j) => j.name === 'hip')!;
+				const surface = this.findSurface(hip.x, hip.y, 30);
+				this.ragdolling = false;
+				this.fig.poseOverride = null;
+				this.ragdollJoints = [];
+				this.ragdollGroundTimer = 0;
+				this.ragdollMotionlessTimer = 0;
+				this.vx = 0;
+				this.vy = 0;
+				if (surface) {
+					this.fig.x = hip.x;
+					this.fig.y = surface.y;
+					this.grounded = true;
+				} else {
+					// No surface nearby — drop out of ragdoll and let gravity land them.
+					this.grounded = false;
+				}
+				this.fig.setState('idle');
+				this.onLanded?.();
 				return;
 			}
 		} else {
@@ -322,20 +342,22 @@ export class StickmanPhysics {
 		const avgFootX = (footL.x + footR.x) / 2;
 		const avgFootY = Math.max(footL.y, footR.y);
 
-		const surface = this.findSurface(avgFootX, avgFootY, 10);
+		// Use a generous radius — feet may be slightly above the surface plane
+		// due to Verlet float drift.
+		const surface = this.findSurface(avgFootX, avgFootY, 20);
 		if (surface) {
 			this.fig.x = avgFootX;
 			this.fig.y = surface.y;
 			this.grounded = true;
 		} else {
-			// Feet aren't on a surface — fall through to resetToNearestSurface
-			this.resetToNearestSurface();
-			return;
+			// No surface found at foot position — stand up at the current hip
+			// location and let gravity settle the stickman onto the nearest surface
+			// naturally, rather than teleporting them away.
+			this.grounded = false;
 		}
 
 		this.vx = 0;
 		this.vy = 0;
-
 		this.fig.setState('jump');
 		this.fig.animParams = { ...this.fig.animParams, subPhase: 0.9 };
 		this.ragdollJoints = [];

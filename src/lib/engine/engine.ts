@@ -69,8 +69,34 @@ export class StickmenEngine {
 	private resizeObserver: ResizeObserver | null = null;
 	private mutationObserver: MutationObserver | null = null;
 	private rebuildTimeout: ReturnType<typeof setTimeout> | null = null;
-	private handleAnimationSettle = () => this.scheduleRebuild();
 	private debugRenderable: Renderable | null = null;
+
+	/**
+	 * CSS properties whose transitions can shift element layout/position.
+	 * Cosmetic-only properties (color, opacity, background, box-shadow, …)
+	 * are intentionally absent — we don't need to rebuild the navgrid for those.
+	 */
+	private static readonly LAYOUT_TRANSITION_PROPERTIES = new Set([
+		'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
+		'top', 'left', 'right', 'bottom',
+		'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+		'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+		'transform', 'translate', 'scale',
+		'flex', 'flex-grow', 'flex-shrink', 'flex-basis',
+		'grid-template-columns', 'grid-template-rows',
+		'gap', 'row-gap', 'column-gap',
+		'font-size', 'line-height', 'letter-spacing',
+		'border-width', 'border-top-width', 'border-right-width',
+		'border-bottom-width', 'border-left-width',
+	]);
+
+	private handleTransitionSettle = (e: TransitionEvent) => {
+		if (StickmenEngine.LAYOUT_TRANSITION_PROPERTIES.has(e.propertyName)) {
+			this.scheduleRebuild();
+		}
+	};
+
+	private handleAnimationSettle = () => this.scheduleRebuild();
 
 	debug = false;
 	defaultProximityThreshold = 60;
@@ -152,8 +178,10 @@ export class StickmenEngine {
 		});
 		this.mutationObserver.observe(container, { childList: true, subtree: true });
 
-		// Auto-rebuild when CSS transitions/animations settle
-		container.addEventListener('transitionend', this.handleAnimationSettle);
+		// Auto-rebuild when layout-affecting CSS transitions/animations settle.
+		// transitionend is filtered to layout properties only — cosmetic transitions
+		// (color, opacity, background, etc.) must not trigger a navgrid rebuild.
+		container.addEventListener('transitionend', this.handleTransitionSettle);
 		container.addEventListener('animationend', this.handleAnimationSettle);
 
 		// Deferred re-scan for late-rendering DOM elements
@@ -170,7 +198,7 @@ export class StickmenEngine {
 
 		this.resizeObserver?.disconnect();
 		this.mutationObserver?.disconnect();
-		this._container?.removeEventListener('transitionend', this.handleAnimationSettle);
+		this._container?.removeEventListener('transitionend', this.handleTransitionSettle);
 		this._container?.removeEventListener('animationend', this.handleAnimationSettle);
 		if (this.rebuildTimeout) clearTimeout(this.rebuildTimeout);
 
