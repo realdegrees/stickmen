@@ -449,13 +449,6 @@ stage.spawn({'{'} behavior: Behaviours.Follow {'}'});</code></pre>
 </div>
 
 <style>
-	:global(body) {
-		margin: 0;
-		background: #0c0c0c;
-		color: #e0e0e0;
-		font-family: 'Inter', system-ui, sans-serif;
-	}
-
 	.page {
 		max-width: 900px;
 		margin: 0 auto;
