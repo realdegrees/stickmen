@@ -26,11 +26,16 @@ export class CanvasRenderer {
 		this.ctx = ctx;
 	}
 
-	/** Resize canvas accounting for device pixel ratio */
+	/** Resize canvas accounting for device pixel ratio.
+	 *  Skips the resize when dimensions are unchanged to avoid clearing the
+	 *  canvas bitmap (setting canvas.width/height wipes all drawn content). */
 	resize(width: number, height: number): void {
 		const dpr = window.devicePixelRatio || 1;
-		this.canvas.width = width * dpr;
-		this.canvas.height = height * dpr;
+		const newW = Math.round(width * dpr);
+		const newH = Math.round(height * dpr);
+		if (this.canvas.width === newW && this.canvas.height === newH) return;
+		this.canvas.width = newW;
+		this.canvas.height = newH;
 		this.canvas.style.width = `${width}px`;
 		this.canvas.style.height = `${height}px`;
 		this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
