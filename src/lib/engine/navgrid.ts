@@ -84,6 +84,19 @@ export class NavGrid {
 	private nodeMap = new Map<string, NavNode>();
 	private adjacency = new Map<string, NavEdge[]>();
 
+	// ── Spatial indices (rebuilt on each scan) ───────────────────────
+
+	/** Spatial hash for fast nearest-node lookups. Key: "cellX:cellY" */
+	private nodeGrid = new Map<string, NavNode[]>();
+	private nodeCellSize = 80;
+
+	/** X-bucketed surface index for fast surface queries. Key: bucket index */
+	private surfaceBuckets = new Map<number, NavSurface[]>();
+	private surfaceBucketWidth = 80;
+
+	/** Surfaces sorted by Y for fast blocking/layer checks in rope edges */
+	private surfacesByY: NavSurface[] = [];
+
 	/** The container element to scope scanning to */
 	private container: HTMLElement | null = null;
 	private containerRect = { left: 0, top: 0 };
@@ -110,6 +123,9 @@ export class NavGrid {
 		this.edges = [];
 		this.nodeMap.clear();
 		this.adjacency.clear();
+		this.nodeGrid.clear();
+		this.surfaceBuckets.clear();
+		this.surfacesByY = [];
 
 		if (!this.container) return;
 
@@ -121,6 +137,7 @@ export class NavGrid {
 		this.containerSize = { width: cr.width, height: cr.height };
 
 		this.extractSurfaces(this.queryElements());
+		this.buildSurfaceIndex();
 		this.generateNodes();
 		this.connectNodes();
 	}
@@ -141,6 +158,9 @@ export class NavGrid {
 		this.edges = [];
 		this.nodeMap.clear();
 		this.adjacency.clear();
+		this.nodeGrid.clear();
+		this.surfaceBuckets.clear();
+		this.surfacesByY = [];
 		this.containerRect = { left: 0, top: 0 };
 
 		const { minElementWidth } = this.config.navgrid;
@@ -159,18 +179,42 @@ export class NavGrid {
 			}
 		}
 
+		this.buildSurfaceIndex();
 		this.generateNodes();
 		this.connectNodes();
 	}
 
 	getSurfaceQuery(): SurfaceQuery {
+		// Capture references for the closure — avoids repeated `this` lookups
+		const buckets = this.surfaceBuckets;
+		const bucketWidth = this.surfaceBucketWidth;
+
 		return (x: number, y: number, searchRadius: number): Surface | null => {
+			const bucketIdx = Math.floor(x / bucketWidth);
+			const bucket = buckets.get(bucketIdx);
+			if (!bucket || bucket.length === 0) return null;
+
+			// bucket is sorted by y1 ascending. Binary search for the first
+			// surface with y1 >= y - 2 (matching the original dist >= -2 check).
+			const minY = y - 2;
+			let lo = 0;
+			let hi = bucket.length;
+			while (lo < hi) {
+				const mid = (lo + hi) >> 1;
+				if (bucket[mid].y1 < minY) lo = mid + 1;
+				else hi = mid;
+			}
+
 			let best: Surface | null = null;
 			let bestDist = searchRadius;
 
-			for (const s of this.surfaces) {
+			// Scan forward from the first candidate — surfaces are Y-sorted
+			// so we can stop once y1 exceeds y + searchRadius.
+			for (let i = lo; i < bucket.length; i++) {
+				const s = bucket[i];
 				const dist = s.y1 - y;
-				if (dist >= -2 && dist < bestDist && x >= s.x1 && x <= s.x2) {
+				if (dist >= bestDist) break; // sorted by y1, no better candidate possible
+				if (dist >= -2 && x >= s.x1 && x <= s.x2) {
 					bestDist = dist;
 					best = { y: s.y1, xMin: s.x1, xMax: s.x2, type: 'horizontal' };
 				}
@@ -181,16 +225,40 @@ export class NavGrid {
 	}
 
 	findNearestNode(x: number, y: number): NavNode | null {
+		const cellSize = this.nodeCellSize;
+		const cx = Math.floor(x / cellSize);
+		const cy = Math.floor(y / cellSize);
+
 		let best: NavNode | null = null;
 		let bestDist = Infinity;
 
-		for (const node of this.nodes) {
-			const dx = node.x - x;
-			const dy = node.y - y;
-			const dist = dx * dx + dy * dy;
-			if (dist < bestDist) {
-				bestDist = dist;
-				best = node;
+		// Check 3x3 neighborhood around the query cell
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dy = -1; dy <= 1; dy++) {
+				const bucket = this.nodeGrid.get(`${cx + dx}:${cy + dy}`);
+				if (!bucket) continue;
+				for (const node of bucket) {
+					const ndx = node.x - x;
+					const ndy = node.y - y;
+					const dist = ndx * ndx + ndy * ndy;
+					if (dist < bestDist) {
+						bestDist = dist;
+						best = node;
+					}
+				}
+			}
+		}
+
+		// Fallback: if 3x3 yielded nothing (very sparse grid), linear scan
+		if (!best) {
+			for (const node of this.nodes) {
+				const ndx = node.x - x;
+				const ndy = node.y - y;
+				const dist = ndx * ndx + ndy * ndy;
+				if (dist < bestDist) {
+					bestDist = dist;
+					best = node;
+				}
 			}
 		}
 
@@ -371,10 +439,45 @@ export class NavGrid {
 		this.surfaces = merged;
 	}
 
+	// ── Spatial Indices ─────────────────────────────────────────────
+
+	/**
+	 * Build X-bucketed surface index and Y-sorted surface list.
+	 * Called after surfaces are finalized (post-merge).
+	 */
+	private buildSurfaceIndex(): void {
+		const bucketWidth = this.surfaceBucketWidth;
+
+		// X-bucketed index: each surface is inserted into every X-bucket it spans.
+		// Each bucket's surfaces are then sorted by Y for binary-search queries.
+		for (const s of this.surfaces) {
+			const bStart = Math.floor(s.x1 / bucketWidth);
+			const bEnd = Math.floor(s.x2 / bucketWidth);
+			for (let b = bStart; b <= bEnd; b++) {
+				let bucket = this.surfaceBuckets.get(b);
+				if (!bucket) {
+					bucket = [];
+					this.surfaceBuckets.set(b, bucket);
+				}
+				bucket.push(s);
+			}
+		}
+
+		// Sort each bucket by y1 ascending for binary search in getSurfaceQuery
+		for (const bucket of this.surfaceBuckets.values()) {
+			bucket.sort((a, b) => a.y1 - b.y1);
+		}
+
+		// Y-sorted surface list for rope edge blocking checks
+		this.surfacesByY = [...this.surfaces].sort((a, b) => a.y1 - b.y1);
+	}
+
 	// ── Node Generation ──────────────────────────────────────────────
 
 	private generateNodes(): void {
 		const { nodeSpacing } = this.config.navgrid;
+		this.nodeCellSize = nodeSpacing * 2;
+		const cellSize = this.nodeCellSize;
 		let nodeId = 0;
 
 		for (const surface of this.surfaces) {
@@ -389,6 +492,15 @@ export class NavGrid {
 				const node: NavNode = { id: `n${nodeId++}`, x, y, surfaceId: surface.id, t };
 				this.nodes.push(node);
 				this.nodeMap.set(node.id, node);
+
+				// Insert into spatial hash
+				const key = `${Math.floor(x / cellSize)}:${Math.floor(y / cellSize)}`;
+				let bucket = this.nodeGrid.get(key);
+				if (!bucket) {
+					bucket = [];
+					this.nodeGrid.set(key, bucket);
+				}
+				bucket.push(node);
 			}
 		}
 	}
@@ -530,63 +642,91 @@ export class NavGrid {
 	private connectRopeEdges(): void {
 		const { ropeHorizontalMargin, jumpMaxDy, minElementWidth, ropeLayerPenalty } = this.config.navgrid;
 
-		// Build surface lookup for horizontal overlap checks
-		const surfaceMap = new Map<string, NavSurface>();
-		for (const s of this.surfaces) {
-			surfaceMap.set(s.id, s);
+		// Index nodes by surface, sorted by x
+		const nodesBySurface = new Map<string, NavNode[]>();
+		for (const node of this.nodes) {
+			let list = nodesBySurface.get(node.surfaceId);
+			if (!list) {
+				list = [];
+				nodesBySurface.set(node.surfaceId, list);
+			}
+			list.push(node);
+		}
+		for (const list of nodesBySurface.values()) {
+			list.sort((a, b) => a.x - b.x);
 		}
 
-		for (let i = 0; i < this.nodes.length; i++) {
-			for (let j = i + 1; j < this.nodes.length; j++) {
-				const a = this.nodes[i];
-				const b = this.nodes[j];
+		const sortedByY = this.surfacesByY; // pre-built in buildSurfaceIndex
 
-				if (a.surfaceId === b.surfaceId) continue;
+		// Phase 1: Pre-filter surface pairs (O(S^2))
+		// Only pairs with sufficient horizontal overlap and vertical gap
+		for (let i = 0; i < this.surfaces.length; i++) {
+			for (let j = i + 1; j < this.surfaces.length; j++) {
+				const sA = this.surfaces[i];
+				const sB = this.surfaces[j];
 
-				const dx = Math.abs(a.x - b.x);
-				if (dx > ropeHorizontalMargin) continue;
-
-				const dy = Math.abs(a.y - b.y);
+				const dy = Math.abs(sA.y1 - sB.y1);
 				if (dy <= jumpMaxDy) continue;
 
-				// Surfaces must overlap horizontally (not just edge-adjacent).
-				// This prevents diagonal rope edges between cards in a horizontal
-				// grid that happen to have close edges but different x ranges.
-				const surfA = surfaceMap.get(a.surfaceId);
-				const surfB = surfaceMap.get(b.surfaceId);
-				if (surfA && surfB) {
-					const overlap = Math.min(surfA.x2, surfB.x2) - Math.max(surfA.x1, surfB.x1);
-					if (overlap < minElementWidth) continue;
-				}
+				const overlap = Math.min(sA.x2, sB.x2) - Math.max(sA.x1, sB.x1);
+				if (overlap < minElementWidth) continue;
 
-				const minY = Math.min(a.y, b.y);
-				const maxY = Math.max(a.y, b.y);
-				const checkX = (a.x + b.x) / 2;
+				const nodesA = nodesBySurface.get(sA.id);
+				const nodesB = nodesBySurface.get(sB.id);
+				if (!nodesA || !nodesB || nodesA.length === 0 || nodesB.length === 0) continue;
 
-				let blocked = false;
-				for (const s of this.surfaces) {
-					if (s.id === a.surfaceId || s.id === b.surfaceId) continue;
-					if (s.y1 > minY + 2 && s.y1 < maxY - 2) {
-						if (checkX >= s.x1 && checkX <= s.x2) {
-							blocked = true;
-							break;
+				// Phase 2: Two-pointer to find node pairs within ropeHorizontalMargin.
+				// Both lists are sorted by x, so we sweep them together.
+				let bi = 0;
+				for (let ai = 0; ai < nodesA.length; ai++) {
+					const a = nodesA[ai];
+
+					// Advance bi to the first node on B within horizontal range
+					while (bi < nodesB.length && nodesB[bi].x < a.x - ropeHorizontalMargin) {
+						bi++;
+					}
+
+					// Scan forward through B nodes that are within range
+					for (let bj = bi; bj < nodesB.length; bj++) {
+						const b = nodesB[bj];
+						if (b.x > a.x + ropeHorizontalMargin) break;
+
+						const ndx = Math.abs(a.x - b.x);
+						const minY = Math.min(a.y, b.y);
+						const maxY = Math.max(a.y, b.y);
+						const checkX = (a.x + b.x) / 2;
+
+						// Phase 3: Blocking check using Y-sorted surface list
+						// Binary search for first surface with y1 > minY + 2
+						let blocked = false;
+						let lo = 0;
+						let hi = sortedByY.length;
+						while (lo < hi) {
+							const mid = (lo + hi) >> 1;
+							if (sortedByY[mid].y1 <= minY + 2) lo = mid + 1;
+							else hi = mid;
 						}
+						for (let k = lo; k < sortedByY.length; k++) {
+							const s = sortedByY[k];
+							if (s.y1 >= maxY - 2) break; // past the vertical range
+							if (s.id === sA.id || s.id === sB.id) continue;
+							if (checkX >= s.x1 && checkX <= s.x2) {
+								blocked = true;
+								break;
+							}
+						}
+						if (blocked) continue;
+
+						const skippedLayers = this.countLayersBetweenIndexed(
+							sA.id, sB.id, minY, maxY, sortedByY
+						);
+						if (skippedLayers > 2) continue;
+
+						const dist = Math.sqrt(ndx * ndx + dy * dy);
+						const cost = dist + skippedLayers * ropeLayerPenalty;
+						this.addEdge(a.id, b.id, cost, 'rope');
 					}
 				}
-
-				if (blocked) continue;
-
-				const skippedLayers = this.countLayersBetween(
-					a.surfaceId,
-					b.surfaceId,
-					minY,
-					maxY
-				);
-				if (skippedLayers > 2) continue;
-
-				const dist = Math.sqrt(dx * dx + dy * dy);
-				const cost = dist + skippedLayers * ropeLayerPenalty;
-				this.addEdge(a.id, b.id, cost, 'rope');
 			}
 		}
 	}
@@ -682,31 +822,45 @@ export class NavGrid {
 		}
 	}
 
-	private countLayersBetween(
+	/**
+	 * Count intermediate surface layers between two Y values.
+	 * Uses the pre-sorted surfacesByY array with binary search for the Y range.
+	 */
+	private countLayersBetweenIndexed(
 		surfaceIdA: string,
 		surfaceIdB: string,
 		minY: number,
-		maxY: number
+		maxY: number,
+		sortedByY: NavSurface[]
 	): number {
 		const { jumpMaxDy } = this.config.navgrid;
-		const ys: number[] = [];
-		for (const s of this.surfaces) {
-			if (s.id === surfaceIdA || s.id === surfaceIdB) continue;
-			if (s.y1 > minY + 2 && s.y1 < maxY - 2) {
-				ys.push(s.y1);
-			}
-		}
-		if (ys.length === 0) return 0;
 
-		ys.sort((a, b) => a - b);
-		let layers = 1;
-		let groupY = ys[0];
-		for (let i = 1; i < ys.length; i++) {
-			if (ys[i] - groupY > jumpMaxDy) {
+		// Binary search for first surface with y1 > minY + 2
+		let lo = 0;
+		let hi = sortedByY.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (sortedByY[mid].y1 <= minY + 2) lo = mid + 1;
+			else hi = mid;
+		}
+
+		let layers = 0;
+		let groupY = -Infinity;
+
+		for (let i = lo; i < sortedByY.length; i++) {
+			const s = sortedByY[i];
+			if (s.y1 >= maxY - 2) break;
+			if (s.id === surfaceIdA || s.id === surfaceIdB) continue;
+
+			if (layers === 0) {
+				layers = 1;
+				groupY = s.y1;
+			} else if (s.y1 - groupY > jumpMaxDy) {
 				layers++;
-				groupY = ys[i];
+				groupY = s.y1;
 			}
 		}
+
 		return layers;
 	}
 
