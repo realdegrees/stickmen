@@ -301,15 +301,9 @@
 			selectedKfIdx = existing;
 			if (!selectedKfIdxs.includes(existing)) selectedKfIdxs = [existing, ...selectedKfIdxs];
 		} else {
-			const selectedTs = selectedKfIdxs.map(i => keyframes[i]?.t).filter(t => t !== undefined) as number[];
 			keyframes = [...keyframes, kf].sort((a, b) => a.t - b.t);
 			selectedKfIdx = keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.01);
-			const reFound = selectedTs
-				.map(t => keyframes.findIndex(k => Math.abs(k.t - t) < 0.01))
-				.filter(i => i >= 0);
-			selectedKfIdxs = selectedKfIdx !== null && !reFound.includes(selectedKfIdx)
-				? [selectedKfIdx, ...reFound]
-				: reFound.length > 0 ? reFound : (selectedKfIdx !== null ? [selectedKfIdx] : []);
+			selectedKfIdxs = selectedKfIdx !== null ? [selectedKfIdx] : [];
 		}
 	}
 
